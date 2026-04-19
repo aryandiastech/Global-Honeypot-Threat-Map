@@ -16,6 +16,7 @@ Thumbs.db
 .idea/
 .vscode/
 *.log
+ml/out*.jsonl
 .aws-sam/
 cdk.out/
 .terraform/

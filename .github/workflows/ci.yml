@@ -64,3 +64,19 @@ jobs:
 
       - name: npm run build
         run: npm run build
+
+  ml-cluster:
+    name: ML clustering stub
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install ML deps
+        run: pip install -r ml/requirements.txt
+
+      - name: Run DBSCAN stub on fixture
+        run: python ml/cluster_events.py --input pipeline/fixtures/sample_cowrie_lines.jsonl --output ml/out-ci-labeled.jsonl

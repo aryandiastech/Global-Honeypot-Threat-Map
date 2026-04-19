@@ -6,6 +6,8 @@ import "./App.css";
 const token = import.meta.env.VITE_MAPBOX_TOKEN?.trim();
 const apiBase = import.meta.env.VITE_API_URL?.trim().replace(/\/+$/, "");
 
+const POLL_MS = 15_000;
+
 type RemoteEvent = {
   event_id?: string;
   received_at?: string;
@@ -22,6 +24,7 @@ export default function App() {
   const [events, setEvents] = useState<RemoteEvent[]>([]);
   const [apiLoading, setApiLoading] = useState(() => Boolean(apiBase));
   const [apiError, setApiError] = useState<string | null>(null);
+  const [lastUpdated, setLastUpdated] = useState<string | null>(null);
 
   useEffect(() => {
     if (!token) return;
@@ -58,30 +61,41 @@ export default function App() {
       setEvents([]);
       setApiError(null);
       setApiLoading(false);
+      setLastUpdated(null);
       return;
     }
 
-    const ac = new AbortController();
-    setApiLoading(true);
-    setApiError(null);
+    let active = true;
 
-    fetch(`${apiBase}/events?limit=20`, { signal: ac.signal })
-      .then(async (res) => {
+    const load = async (showSpinner: boolean) => {
+      if (showSpinner) setApiLoading(true);
+      setApiError(null);
+      try {
+        const res = await fetch(`${apiBase}/events?limit=20`);
         if (!res.ok) {
           const text = await res.text();
           throw new Error(text || `HTTP ${res.status}`);
         }
-        return res.json() as Promise<{ items?: RemoteEvent[] }>;
-      })
-      .then((data) => setEvents(Array.isArray(data.items) ? data.items : []))
-      .catch((err: unknown) => {
-        if (err instanceof DOMException && err.name === "AbortError") return;
+        const data = (await res.json()) as { items?: RemoteEvent[] };
+        if (!active) return;
+        setEvents(Array.isArray(data.items) ? data.items : []);
+        setLastUpdated(new Date().toLocaleTimeString());
+      } catch (err: unknown) {
+        if (!active) return;
         setApiError(err instanceof Error ? err.message : "Request failed");
         setEvents([]);
-      })
-      .finally(() => setApiLoading(false));
+      } finally {
+        if (active && showSpinner) setApiLoading(false);
+      }
+    };
 
-    return () => ac.abort();
+    void load(true);
+    const id = window.setInterval(() => void load(false), POLL_MS);
+
+    return () => {
+      active = false;
+      window.clearInterval(id);
+    };
   }, [apiBase]);
 
   return (
@@ -91,7 +105,7 @@ export default function App() {
           <div className="title">Global Honeypot Threat Map</div>
           <div className="subtitle">Live honeypot telemetry → ML → 3D arcs (Mapbox)</div>
         </div>
-        <div className="pill">read API + dashboard</div>
+        <div className="pill">polling + ML stub</div>
       </header>
 
       <main className="main">
@@ -129,6 +143,18 @@ export default function App() {
                 {!apiBase ? "VITE_API_URL not set" : apiLoading ? "loading…" : apiError ? "error" : "ok"}
               </span>
             </div>
+            {apiBase ? (
+              <div className="kv">
+                <span>Feed</span>
+                <span className="muted small">auto-refresh ~{Math.round(POLL_MS / 1000)}s</span>
+              </div>
+            ) : null}
+            {lastUpdated ? (
+              <div className="kv">
+                <span>Last fetch</span>
+                <span className="muted small">{lastUpdated}</span>
+              </div>
+            ) : null}
             {apiError ? <div className="inlineError">{apiError}</div> : null}
           </div>
 
@@ -158,9 +184,10 @@ export default function App() {
           <div className="card">
             <div className="cardTitle">Next wiring</div>
             <ul className="list">
-              <li>Polling / WebSocket for fresher updates</li>
-              <li>Geo-IP enrichment for arc geometry</li>
-              <li>Auth + tighter CORS for production</li>
+              <li>Geo-IP + Mapbox arcs (external APIs)</li>
+              <li>Threat intel + reputation scoring</li>
+              <li>Auth + tighter CORS + hosted prod URL</li>
+              <li>GitHub Wiki pages (14-page requirement)</li>
             </ul>
           </div>
         </aside>

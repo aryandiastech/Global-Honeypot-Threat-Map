@@ -19,11 +19,25 @@ Source of truth: `config/deployment-regions.json`.
 | `pipeline/read_api/` | HTTP API Lambda: recent events (`GET /events`) |
 | `infra/sam/` | AWS SAM template for bucket + Lambda + table |
 | `infra/ecs/` | Sample Fargate task definition + notes for Cowrie |
-| `.github/workflows/` | CI: Docker build + Python compile for ingest Lambda |
+| `.github/workflows/` | CI: Docker, Python Lambdas/scripts, ML stub, frontend build |
 | `scripts/` | Ops helpers (e.g. upload Cowrie logs to the raw S3 bucket) |
 | `infra/iam/` | Sample ECS task-role policy for S3 uploads |
-| `frontend/` | React + Vite + Mapbox GL dashboard scaffold |
-| _(upcoming)_ `ml/` | Clustering / reputation jobs |
+| `frontend/` | React + Vite + Mapbox GL dashboard + read API feed (polling) |
+| `ml/` | Offline DBSCAN clustering stub (`cluster_events.py`) |
+
+## Project status (what is left)
+
+This is an honest “class demo vs production” snapshot.
+
+| Track | In repo now | Typical remaining work |
+|------|-------------|-------------------------|
+| Honeypot | Cowrie Docker + compose + ECS sample task | Multi-region Fargate **services**, steady **log → S3** (sidecar/schedule), hardening |
+| Data plane | SAM: S3 ingest, DynamoDB, timeline GSI, HTTP **GET /events** | `sam deploy` in **each** region, alarms, DLQ, backfills |
+| Dashboard | Map (optional token), events list, **15s polling** | **Arcs** (needs geo-IP), auth, prod hosting URL, WebSockets if you want |
+| ML / intel | **Offline** DBSCAN stub | Richer features, scheduled job, **reputation** + external intel, write-back to Dynamo |
+| Docs / submission | README + folder docs | **14-page GitHub Wiki** + evaluation write-up |
+
+**Rough overall:** about **~60–70%** of a strong end-to-end *demo* is in place; the remaining **~30–40%** is mostly **operations** (multi-region fleet, secrets, monitoring), **visual/geo/intel** layers, **ML depth**, and **Wiki/reporting**—not more “empty repo” work.
 
 ## When to create third-party accounts (I will tell you at each step)
 
