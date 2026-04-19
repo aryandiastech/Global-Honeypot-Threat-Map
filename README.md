@@ -15,15 +15,17 @@ Source of truth: `config/deployment-regions.json`.
 |------|---------|
 | `honeypots/cowrie/` | SSH honeypot image (Cowrie), local `docker compose` |
 | `config/` | Shared non-secret config (e.g. region list) |
-| _(upcoming)_ `infra/`, `pipeline/`, `frontend/`, `ml/` | IaC, Lambda/ingestion, React app, models |
+| `pipeline/ingest_lambda/` | S3-triggered Lambda: JSONL → DynamoDB |
+| `infra/sam/` | AWS SAM template for bucket + Lambda + table |
+| _(upcoming)_ `frontend/`, `ml/` | React + Mapbox dashboard, clustering / reputation |
 
-## When you need third-party keys (you will provide later)
+## When to create third-party accounts (I will tell you at each step)
 
-| Secret | Needed when |
-|--------|-------------|
-| **Mapbox access token** | Building and deploying the React map (Mapbox GL). |
-| **IP geolocation API** | Enriching attacker source IPs with lat/lon for arcs on the map (typically in Lambda or stream processing). |
-| **Threat intel / reputation API** | Computing or augmenting IP reputation scores (engine or batch job). |
+| Secret | Create the account / key **right before** we start this work |
+|--------|------------------------------------------------------------------|
+| **Mapbox access token** | **Frontend milestone** — scaffolding the React app, Mapbox map, and deployment env vars. Until then, not needed. |
+| **IP geolocation API** | **Map / enrichment milestone** — when we add lat/lon per `src_ip` (Lambda or stream after ingest). Ingest to DynamoDB works without it. |
+| **Threat intel / reputation API** | **Reputation / ML milestone** — when we score IPs or blend external intel into clusters. Clustering on log features can start without it. |
 
 Store all secrets in **AWS Secrets Manager** (or SSM Parameter Store) for runtime; never commit them.
 

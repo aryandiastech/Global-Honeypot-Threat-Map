@@ -1,0 +1,105 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Transform: AWS::Serverless-2016-10-31
+Description: >
+  Global Honeypot Threat Map — raw logs land in S3; Lambda ingests JSONL into DynamoDB.
+
+Parameters:
+  Stage:
+    Type: String
+    Default: dev
+    Description: Short name suffix for resource names (e.g. dev, prod).
+
+Globals:
+  Function:
+    Runtime: python3.12
+    Timeout: 120
+    MemorySize: 256
+    Architectures:
+      - x86_64
+
+Resources:
+  RawLogBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub "ghtm-raw-logs-${Stage}-${AWS::AccountId}"
+      VersioningConfiguration:
+        Status: Enabled
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+
+  EventsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: !Sub "ghtm-honeypot-events-${Stage}"
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: event_id
+          AttributeType: S
+        - AttributeName: src_ip
+          AttributeType: S
+        - AttributeName: received_at
+          AttributeType: S
+      KeySchema:
+        - AttributeName: event_id
+          KeyType: HASH
+      GlobalSecondaryIndexes:
+        - IndexName: src_ip-received_at
+          KeySchema:
+            - AttributeName: src_ip
+              KeyType: HASH
+            - AttributeName: received_at
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+
+  IngestFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub "ghtm-ingest-${Stage}"
+      CodeUri: ../../pipeline/ingest_lambda/
+      Handler: handler.lambda_handler
+      Environment:
+        Variables:
+          EVENTS_TABLE_NAME: !Ref EventsTable
+      Policies:
+        - Version: "2012-10-17"
+          Statement:
+            - Effect: Allow
+              Action:
+                - dynamodb:PutItem
+              Resource: !GetAtt EventsTable.Arn
+            - Effect: Allow
+              Action:
+                - s3:GetObject
+                - s3:ListBucket
+                - s3:GetBucketLocation
+                - s3:GetObjectVersion
+                - s3:HeadObject
+              Resource:
+                - !GetAtt RawLogBucket.Arn
+                - !Sub "${RawLogBucket.Arn}/*"
+      Events:
+        RawObjectCreated:
+          Type: S3
+          Properties:
+            Bucket: !Ref RawLogBucket
+            Events: s3:ObjectCreated:*
+            # No key filter: Cowrie may use names like cowrie.json; handler skips bad lines.
+
+Outputs:
+  RawLogBucketName:
+    Description: Upload honeypot exports / log batches here (suffix .jsonl triggers ingest).
+    Value: !Ref RawLogBucket
+  EventsTableName:
+    Description: DynamoDB table for normalized events.
+    Value: !Ref EventsTable
+  IngestFunctionArn:
+    Description: Lambda function ARN.
+    Value: !GetAtt IngestFunction.Arn
