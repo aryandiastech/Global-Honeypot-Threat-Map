@@ -1,0 +1,25 @@
+{
+  "family": "ghtm-cowrie",
+  "networkMode": "awsvpc",
+  "requiresCompatibilities": ["FARGATE"],
+  "cpu": "512",
+  "memory": "1024",
+  "executionRoleArn": "arn:aws:iam::ACCOUNT_ID:role/ecsTaskExecutionRole",
+  "taskRoleArn": "arn:aws:iam::ACCOUNT_ID:role/ghtm-cowrie-task",
+  "containerDefinitions": [
+    {
+      "name": "cowrie",
+      "image": "ACCOUNT_ID.dkr.ecr.REGION.amazonaws.com/ghtm-cowrie:latest",
+      "essential": true,
+      "portMappings": [{ "containerPort": 2222, "protocol": "tcp" }],
+      "logConfiguration": {
+        "logDriver": "awslogs",
+        "options": {
+          "awslogs-group": "/ecs/ghtm-cowrie",
+          "awslogs-region": "REGION",
+          "awslogs-stream-prefix": "cowrie"
+        }
+      }
+    }
+  ]
+}

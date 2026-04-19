@@ -1,0 +1,2 @@
+{"eventid":"cowrie.client.version","version":"CI-fixture","timestamp":"2026-04-19T00:00:00.000000Z","src_ip":"198.51.100.10"}
+{"eventid":"cowrie.login.failed","username":"root","password":"invalid","timestamp":"2026-04-19T00:00:01.000000Z","src_ip":"198.51.100.10"}

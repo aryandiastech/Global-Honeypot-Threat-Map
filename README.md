@@ -17,6 +17,8 @@ Source of truth: `config/deployment-regions.json`.
 | `config/` | Shared non-secret config (e.g. region list) |
 | `pipeline/ingest_lambda/` | S3-triggered Lambda: JSONL → DynamoDB |
 | `infra/sam/` | AWS SAM template for bucket + Lambda + table |
+| `infra/ecs/` | Sample Fargate task definition + notes for Cowrie |
+| `.github/workflows/` | CI: Docker build + Python compile for ingest Lambda |
 | _(upcoming)_ `frontend/`, `ml/` | React + Mapbox dashboard, clustering / reputation |
 
 ## When to create third-party accounts (I will tell you at each step)
@@ -28,6 +30,10 @@ Source of truth: `config/deployment-regions.json`.
 | **Threat intel / reputation API** | **Reputation / ML milestone** — when we score IPs or blend external intel into clusters. Clustering on log features can start without it. |
 
 Store all secrets in **AWS Secrets Manager** (or SSM Parameter Store) for runtime; never commit them.
+
+## Git workflow (why you might not see a push every message)
+
+Work lands on **feature branches** and is **pushed after each implemented milestone** (or multi-commit milestone). If a reply is only planning or answering questions, there may be **no new commit** that round. Open PRs on GitHub to review and merge into your main integration branch when ready.
 
 ## Pre-build verification (run on your machine)
 
