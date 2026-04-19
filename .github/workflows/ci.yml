@@ -38,3 +38,8 @@ jobs:
 
       - name: Byte-compile handler
         run: python -m compileall -q pipeline/ingest_lambda
+
+      - name: Install script deps and byte-compile uploader
+        run: |
+          pip install -r scripts/requirements.txt
+          python -m compileall -q scripts

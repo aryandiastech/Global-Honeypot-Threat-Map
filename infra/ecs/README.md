@@ -33,4 +33,10 @@ aws ecs register-task-definition --cli-input-json file://infra/ecs/task-definiti
 
 4. Create an **ECS cluster** (Fargate), a **security group** allowing **TCP 2222** from `0.0.0.0/0` (only if you intend a public honeypot), subnets with a route to an **Internet Gateway** for tasks with **public IP assigned**, then create a **Fargate service** with launch type Fargate.
 
-Log shipping to the **ingest** S3 bucket is a follow-up (sidecar container, FireLens, or scheduled upload); the ingest Lambda already accepts any object key once it lands in the bucket.
+## Shipping logs to S3 (ingest bucket)
+
+1. Deploy the SAM stack and note **RawLogBucketName**.
+2. Create an IAM **task role** using `infra/iam/task-role-s3-put-policy.json` (replace the bucket placeholder).
+3. Run `scripts/cowrie_log_to_s3.py` from a host with credentials (laptop, CI, ECS Exec, or a small sidecar/cron) to `PutObject` into that bucket. Each new object triggers the ingest Lambda.
+
+See `scripts/README.md` for examples.

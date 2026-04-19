@@ -19,6 +19,8 @@ Source of truth: `config/deployment-regions.json`.
 | `infra/sam/` | AWS SAM template for bucket + Lambda + table |
 | `infra/ecs/` | Sample Fargate task definition + notes for Cowrie |
 | `.github/workflows/` | CI: Docker build + Python compile for ingest Lambda |
+| `scripts/` | Ops helpers (e.g. upload Cowrie logs to the raw S3 bucket) |
+| `infra/iam/` | Sample ECS task-role policy for S3 uploads |
 | _(upcoming)_ `frontend/`, `ml/` | React + Mapbox dashboard, clustering / reputation |
 
 ## When to create third-party accounts (I will tell you at each step)
