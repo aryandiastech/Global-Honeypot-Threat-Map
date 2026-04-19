@@ -16,6 +16,7 @@ Source of truth: `config/deployment-regions.json`.
 | `honeypots/cowrie/` | SSH honeypot image (Cowrie), local `docker compose` |
 | `config/` | Shared non-secret config (e.g. region list) |
 | `pipeline/ingest_lambda/` | S3-triggered Lambda: JSONL → DynamoDB |
+| `pipeline/read_api/` | HTTP API Lambda: recent events (`GET /events`) |
 | `infra/sam/` | AWS SAM template for bucket + Lambda + table |
 | `infra/ecs/` | Sample Fargate task definition + notes for Cowrie |
 | `.github/workflows/` | CI: Docker build + Python compile for ingest Lambda |

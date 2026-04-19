@@ -37,7 +37,7 @@ jobs:
         run: pip install -r pipeline/ingest_lambda/requirements.txt
 
       - name: Byte-compile handler
-        run: python -m compileall -q pipeline/ingest_lambda
+        run: python -m compileall -q pipeline/ingest_lambda pipeline/read_api
 
       - name: Install script deps and byte-compile uploader
         run: |

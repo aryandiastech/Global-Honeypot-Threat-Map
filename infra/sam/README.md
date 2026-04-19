@@ -39,6 +39,22 @@ aws s3 cp sample.jsonl s3://<RawLogBucketName>/test/sample.jsonl
 
 Then query DynamoDB (AWS Console or CLI) for new items.
 
+## Read API (HTTP API → Lambda → DynamoDB)
+
+After deploy, the stack output **HttpApiUrl** is the base URL for:
+
+```powershell
+curl "$env:HTTP_API_URL/events?limit=10"
+```
+
+Point the dashboard at it via `frontend/.env`:
+
+```text
+VITE_API_URL=https://xxxxxxxx.execute-api.REGION.amazonaws.com
+```
+
+**Note:** items ingested **before** the `timeline-received_at` GSI existed will not appear until re-ingested (they lack `timeline_pk`).
+
 ## Next wiring steps (later milestones)
 
 - Honeypot → S3: sidecar uploader, FireLens, or scheduled `aws s3 cp` from Fargate.

@@ -46,6 +46,8 @@ Resources:
           AttributeType: S
         - AttributeName: received_at
           AttributeType: S
+        - AttributeName: timeline_pk
+          AttributeType: S
       KeySchema:
         - AttributeName: event_id
           KeyType: HASH
@@ -58,6 +60,28 @@ Resources:
               KeyType: RANGE
           Projection:
             ProjectionType: ALL
+        - IndexName: timeline-received_at
+          KeySchema:
+            - AttributeName: timeline_pk
+              KeyType: HASH
+            - AttributeName: received_at
+              KeyType: RANGE
+          Projection:
+            ProjectionType: ALL
+
+  HttpApi:
+    Type: AWS::Serverless::HttpApi
+    Properties:
+      StageName: $default
+      CorsConfiguration:
+        AllowMethods:
+          - GET
+          - OPTIONS
+        AllowHeaders:
+          - "*"
+        AllowOrigins:
+          - "*"
+        MaxAge: 600
 
   IngestFunction:
     Type: AWS::Serverless::Function
@@ -93,9 +117,31 @@ Resources:
             Events: s3:ObjectCreated:*
             # No key filter: Cowrie may use names like cowrie.json; handler skips bad lines.
 
+  ListEventsFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub "ghtm-list-events-${Stage}"
+      CodeUri: ../../pipeline/read_api/
+      Handler: handler.lambda_handler
+      Timeout: 30
+      MemorySize: 128
+      Environment:
+        Variables:
+          EVENTS_TABLE_NAME: !Ref EventsTable
+      Policies:
+        - DynamoDBReadPolicy:
+            TableName: !Ref EventsTable
+      Events:
+        ListEvents:
+          Type: HttpApi
+          Properties:
+            ApiId: !Ref HttpApi
+            Path: /events
+            Method: GET
+
 Outputs:
   RawLogBucketName:
-    Description: Upload honeypot exports / log batches here (suffix .jsonl triggers ingest).
+    Description: Upload honeypot exports / log batches here; ObjectCreated triggers ingest.
     Value: !Ref RawLogBucket
   EventsTableName:
     Description: DynamoDB table for normalized events.
@@ -103,3 +149,9 @@ Outputs:
   IngestFunctionArn:
     Description: Lambda function ARN.
     Value: !GetAtt IngestFunction.Arn
+  HttpApiUrl:
+    Description: Public HTTP API base URL (append /events?limit=25).
+    Value: !GetAtt HttpApi.ApiEndpoint
+  ListEventsFunctionArn:
+    Description: Read API Lambda ARN.
+    Value: !GetAtt ListEventsFunction.Arn

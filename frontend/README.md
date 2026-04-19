@@ -8,11 +8,14 @@ npm install
 npm run dev
 ```
 
-## Mapbox token
+## Environment variables
 
-Copy `.env.example` to `.env` and set `VITE_MAPBOX_TOKEN`. Restart `npm run dev` after changes.
+Copy `.env.example` to `.env`.
 
-Without a token, the UI still loads and shows setup instructions.
+- **`VITE_MAPBOX_TOKEN`**: required for the Mapbox globe.
+- **`VITE_API_URL`**: optional; set to the SAM output **HttpApiUrl** (no trailing slash) to load recent events from `GET /events`.
+
+Restart `npm run dev` after changes.
 
 ## Production build
 

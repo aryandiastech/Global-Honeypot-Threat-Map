@@ -74,6 +74,8 @@ def _process_object(*, bucket: str, key: str) -> int:
         item: dict[str, Any] = {
             "event_id": event_id,
             "received_at": received_at,
+            # Timeline GSI partition for "recent events" API (read Lambda).
+            "timeline_pk": "GLOBAL",
             "s3_bucket": bucket,
             "s3_key": key,
             "line_index": idx,
