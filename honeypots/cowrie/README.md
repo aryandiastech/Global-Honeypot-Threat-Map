@@ -7,8 +7,13 @@ Medium-interaction SSH honeypot based on [Cowrie](https://github.com/cowrie/cowr
 From this directory, with Docker Desktop running:
 
 ```powershell
-docker compose up --build
+docker compose build
+docker compose up
 ```
+
+The compose file bind-mounts `etc/cowrie.local.cfg` into the container so your config is always applied (and editable without rebuilding). The Dockerfile still bakes a copy for Fargate-style runs without a bind mount.
+
+If `docker compose build` errors on `COPY --chmod`, enable BuildKit (Docker Desktop does by default) or run: `set DOCKER_BUILDKIT=1` in classic cmd.
 
 Test (expect honeypot banner / auth flow):
 
