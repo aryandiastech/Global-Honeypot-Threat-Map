@@ -21,7 +21,8 @@ Source of truth: `config/deployment-regions.json`.
 | `.github/workflows/` | CI: Docker build + Python compile for ingest Lambda |
 | `scripts/` | Ops helpers (e.g. upload Cowrie logs to the raw S3 bucket) |
 | `infra/iam/` | Sample ECS task-role policy for S3 uploads |
-| _(upcoming)_ `frontend/`, `ml/` | React + Mapbox dashboard, clustering / reputation |
+| `frontend/` | React + Vite + Mapbox GL dashboard scaffold |
+| _(upcoming)_ `ml/` | Clustering / reputation jobs |
 
 ## When to create third-party accounts (I will tell you at each step)
 
