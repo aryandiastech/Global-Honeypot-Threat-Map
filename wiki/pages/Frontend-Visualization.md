@@ -1,28 +1,25 @@
-# Frontend Visualization (React + Mapbox)
+# Frontend Visualization
 
-## Dashboard features (current)
+This page describes the user interface used to consume, observe, and engage with the threat intelligence data collected by the Global Honeypot Threat Map.
 
-- Optional Mapbox globe (dark style, fog, navigation controls)
-- “Recent events” panel fetching `GET /events`
-- Auto-refresh polling (15s) when `VITE_API_URL` is configured
+## Technologies Used
+- **Framework**: React with Vite
+- **Mapping Engine**: Mapbox GL JS (`mapbox-gl`)
+- **Data Binding**: React Hooks (`useEffect`, `useState`) polling over HTTP
 
-Repo location: `frontend/`
+## The Live 3D Globe
+Once the React application starts (via `npm run dev`), it connects to the Mapbox API to fetch geographic tile definitions. 
+Because Mapbox supports 3D globe projections (`projection: "globe"`), we orient the map to view AWS Regions (Mumbai and N. Virginia) from a wide, global angle.
 
-## Environment variables
+## Event Processing & Animation
+Our deployment consists of an HTTP API Gateway connected to the `list_events_lambda`. The frontend simply polls `/events?limit=20` to grab the freshest logs:
+1. It reads the source IP geographical coordinates (`geo_lat`, `geo_lon`).
+2. It draws a `LineString` (an arc) in standard GeoJSON format from the attacker's physical location directly to the AWS node they hit.
+3. It refreshes automatically every 15 seconds.
 
-Create `frontend/.env` from `.env.example`:
-
-- `VITE_API_URL`: SAM output `HttpApiUrl` (no trailing slash)
-- `VITE_MAPBOX_TOKEN`: Mapbox public token (only needed for the globe)
-
-## Why Mapbox + Globe projection
-
-- supports globe projection and rich styling
-- later: draw arcs with GeoJSON lines and animate them by timestamp
-
-## Next visualization steps
-
-- Add geo-IP enrichment so each `src_ip` has `(lat, lon)`.
-- Map AWS region nodes to fixed lat/lon points.
-- Draw **great-circle arcs** (or approximated segments) from origin → AWS node.
-
+## Integrating AI: Unsupervised Botnet Colors
+The crowning feature of the dashboard is its ML Integration. When events arrive, they include an integer `cluster_id` appended by our backend DBSCAN Lambda. 
+- In the `src/App.tsx`, we intercept the `cluster_id` and map it to a predefined hex color array using mathematical modding.
+- Random noise (isolated scanners) default to a low-opacity blue line (`cluster_id: -1`).
+- Verified grouped Botnets (e.g., `BOTNET-1`, `BOTNET-2`) will glow brightly in distinct neon colors on the map.
+- The Side Panel also displays this ID badge next to Cowrie's internal Session ID, allowing Threat Researchers to instantly group IPs by visual correlation!

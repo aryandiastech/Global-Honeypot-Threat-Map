@@ -1,38 +1,15 @@
-# Data Pipeline (S3 → Lambda → DynamoDB)
+# Data Pipeline Overview
 
-## Design
+The data pipeline guarantees that the raw interactions in our decentralized honeypots are structurally normalized, durably stored, and made available for both the API Frontend and the Machine Learning clustering steps.
 
-1. Honeypot produces logs (batch files).
-2. Logs are uploaded to **S3 raw bucket**.
-3. S3 sends an **ObjectCreated** event to **Ingest Lambda**.
-4. Lambda reads the object, parses each JSON line, and writes normalized items to DynamoDB.
+## Pipeline Flow (Ingestion)
 
-This design allows reprocessing (from S3) and keeps the “hot path” fast for the dashboard.
+1. **Honeypot (Log Shipper)**: A custom `log_shipper.py` process running inside our Cowrie ECS Task batches `cowrie.json` outputs and uses the `boto3` library to upload JSONLines to the Raw Log S3 Bucket.
+2. **Raw Bucket Trigger**: S3 `ObjectCreated` event triggers our AWS Lambda `ingest_lambda`. 
+3. **Normalization**: The Ingest Lambda unzips/parses the JSONLines, grabs critical fields, and inserts them durably into a DynamoDB `EventsTable`.
+4. **Geo/Reputation Enrichment**: A secondary AWS Lambda `enrich_lambda` listens to DynamoDB streams. It reaches out to **IPinfo** for geographic coordinates and **AbuseIPDB** for IP reputation, saving these enriched fields back to DynamoDB.
 
-## Why S3 events + Lambda
-
-Amazon S3 can send an event to a Lambda function when an object is created/deleted; the function is invoked asynchronously.
-
-Reference: AWS Lambda docs `https://docs.aws.amazon.com/lambda/latest/dg/with-s3.html`
-
-## Ingest implementation (repo)
-
-- SAM template: `infra/sam/template.yaml`
-- Lambda handler: `pipeline/ingest_lambda/handler.py`
-
-### Normalized fields (current)
-
-- `event_id` (sha256(bucket, key, line))
-- `received_at` (ingest time)
-- `timeline_pk = "GLOBAL"` (for recent-events API)
-- optional `src_ip`, `cowrie_eventid`, `sensor_timestamp`
-- `s3_bucket`, `s3_key`, `line_index`
-
-## Shipping logs to S3 (current approach)
-
-We provide a helper script:
-
-- `scripts/cowrie_log_to_s3.py`
-
-This is enough for demos and for wiring an ECS sidecar/scheduled job later.
-
+## Why S3 -> Lambda -> DynamoDB?
+- Highly scalable and completely serverless, removing the need for an always-on log parsing node.
+- DynamoDB enables millisecond query speeds for the `read_api` used by the Frontend visualization map.
+- The use of DynamoDB Streams for enrichment creates a completely non-blocking, asynchronous workflow that doesn't slow down initial data persistence.

@@ -1,39 +1,40 @@
-# Deployment & Operations (Multi-region)
+# Deployment and Operations
 
-## Multi-region model
+This document encapsulates the standard operating procedures to boot the infrastructure.
 
-We deploy the **same logical stack** in multiple AWS regions:
+## Prerequisites
+- AWS CLI configured locally (`aws configure`).
+- AWS SAM CLI installed.
+- Docker engine standing by.
 
-- Honeypot service(s) in each region (ECS Fargate)
-- Raw log bucket in each region (S3)
-- Ingest Lambda in each region
-- DynamoDB table in each region
-- Read API in each region (optional: one “global” API that aggregates later)
+## Step 1: Deploy Core Resources using AWS SAM
+The DynamoDB tables, S3 Buckets, HTTP API, and all AWS Lambda scripts rely on the SAM `template.yaml`.
+```bash
+cd infra/sam
+sam build --use-container
+sam deploy --guided --parameter-overrides Stage=prod IpinfoToken="<YOUR_TOKEN>" AbuseIpdbKey="<YOUR_KEY>"
+```
+*Note the returned SAM Outputs (specifically the `RawLogBucketName` and `HttpApiUrl`).*
 
-Initial regions:
+## Step 2: Build & Push the Cowrie Docker Image
+Navigate to the Cowrie honeypot directory. The Dockerfile now incorporates `log_shipper.py`.
+```bash
+cd honeypots/cowrie
+docker build -t ghtm-cowrie:latest .
+# Push this image to AWS ECR manually following AWS login steps
+```
 
-- `ap-south-1`
-- `us-east-1`
+## Step 3: Deploy AWS Fargate
+Use the included CloudFormation template to spin up the actual decoy nodes.
+```bash
+cd infra/ecs
+aws cloudformation deploy --template-file fargate-deploy.yaml --stack-name GHTM-Fargate-Prod --parameter-overrides ImageUrl="<YOUR_ECR_URI>" RawLogBucketName="<SAM_BUCKET_NAME>" Stage=prod
+```
 
-## Deployment steps (high level)
-
-1. Deploy SAM stack in region A:
-   - `sam build`
-   - `sam deploy --guided --region ap-south-1`
-2. Deploy SAM stack in region B:
-   - `sam deploy --guided --region us-east-1`
-3. Build and push Cowrie image to ECR per region (or use cross-region replication).
-4. Create ECS clusters and Fargate services per region.
-5. Ensure log shipping writes to the correct region’s raw bucket.
-
-## Observability checklist
-
-- CloudWatch logs for ECS tasks and Lambdas
-- CloudWatch alarms:
-  - Lambda errors/throttles
-  - DynamoDB throttles
-  - S3 4xx/5xx
-- Cost controls:
-  - S3 lifecycle rules
-  - DynamoDB on-demand vs provisioned later
-
+## Step 4: Launch React UI
+```bash
+cd frontend
+# Populate .env with API URL and Mapbox token
+npm install
+npm run dev
+```

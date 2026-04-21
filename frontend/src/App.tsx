@@ -18,11 +18,22 @@ type RemoteEvent = {
   geo_lat?: number;
   geo_lon?: number;
   aws_region?: string;
+  cluster_id?: number | string;
 };
 
 const REGION_NODES: Record<string, { lon: number; lat: number; label: string }> = {
   "ap-south-1": { lon: 72.8777, lat: 19.076, label: "Mumbai (ap-south-1)" },
   "us-east-1": { lon: -77.0369, lat: 38.9072, label: "N. Virginia (us-east-1)" },
+};
+
+// Generates a stable hex color from a cluster_id integer
+const getClusterColor = (id: number | string | undefined) => {
+  if (id === undefined || id === null || Number(id) === -1) {
+    return "rgba(61, 139, 253, 0.4)"; // Default noise color (low opacity blue)
+  }
+  const colors = ["#ff595e", "#ffca3a", "#8ac926", "#1982c4", "#6a4c93", "#f15bb5"];
+  const numId = Number(id);
+  return colors[numId % colors.length];
 };
 
 export default function App() {
@@ -73,9 +84,9 @@ export default function App() {
           type: "line",
           source: "arcs",
           paint: {
-            "line-color": "rgba(61, 139, 253, 0.85)",
+            "line-color": ["get", "color"], // Read dynamically from GeoJSON feature properties
             "line-width": 2,
-            "line-opacity": 0.75,
+            "line-opacity": 0.85,
           },
         });
       } catch {
@@ -102,12 +113,16 @@ export default function App() {
       .map((e) => {
         const region = (e.aws_region && REGION_NODES[e.aws_region] ? e.aws_region : "ap-south-1") as string;
         const node = REGION_NODES[region];
+        const color = getClusterColor(e.cluster_id);
+        
         return {
           type: "Feature" as const,
           properties: {
             src_ip: e.src_ip ?? "",
             region,
             label: node.label,
+            color,
+            cluster_id: e.cluster_id
           },
           geometry: {
             type: "LineString" as const,
@@ -244,27 +259,30 @@ export default function App() {
               <p className="muted small">No items returned yet (upload logs to S3 or wait for ingest).</p>
             ) : (
               <ul className="events">
-                {events.map((e) => (
-                  <li key={e.event_id ?? `${e.s3_key}-${e.line_index}`} className="eventRow">
-                    <div className="eventTop">
-                      <span className="mono">{e.src_ip ?? "—"}</span>
-                      <span className="muted small">{e.received_at ?? ""}</span>
-                    </div>
-                    <div className="muted small mono">{e.cowrie_eventid ?? ""}</div>
-                  </li>
-                ))}
+                {events.map((e) => {
+                  const hasCluster = e.cluster_id !== undefined && Number(e.cluster_id) !== -1;
+                  const cColor = getClusterColor(e.cluster_id);
+                  return (
+                    <li key={e.event_id ?? `${e.s3_key}-${e.line_index}`} className="eventRow">
+                      <div className="eventTop">
+                        <span className="mono" style={{ borderLeft: `3px solid ${cColor}`, paddingLeft: "4px" }}>
+                          {e.src_ip ?? "—"}
+                        </span>
+                        <span className="muted small">{e.received_at ?? ""}</span>
+                      </div>
+                      <div className="muted small mono flex-between">
+                        <span>{e.cowrie_eventid ?? ""}</span>
+                        {hasCluster && (
+                          <span style={{ color: cColor, fontWeight: "bold" }}>
+                            BOTNET-{e.cluster_id}
+                          </span>
+                        )}
+                      </div>
+                    </li>
+                  )
+                })}
               </ul>
             )}
-          </div>
-
-          <div className="card">
-            <div className="cardTitle">Next wiring</div>
-            <ul className="list">
-              <li>Geo-IP + Mapbox arcs (external APIs)</li>
-              <li>Threat intel + reputation scoring</li>
-              <li>Auth + tighter CORS + hosted prod URL</li>
-              <li>GitHub Wiki pages (14-page requirement)</li>
-            </ul>
           </div>
         </aside>
       </main>

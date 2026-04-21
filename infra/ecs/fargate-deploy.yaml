@@ -1,0 +1,108 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: >
+  Global Honeypot Threat Map — Fargate Deployment for Cowrie.
+  Deploys an ECS Cluster, Task Definition, and a Service on Free-Tier friendly limits.
+
+Parameters:
+  Stage:
+    Type: String
+    Default: dev
+    Description: Environment stage name.
+  ImageUrl:
+    Type: String
+    Description: The ECR Image URI for our custom Cowrie container.
+  RawLogBucketName:
+    Type: String
+    Description: Name of the S3 bucket to ship logs to (from SAM stack).
+
+Resources:
+  CowrieCluster:
+    Type: AWS::ECS::Cluster
+    Properties:
+      ClusterName: !Sub "ghtm-cluster-${Stage}"
+      CapacityProviders:
+        - FARGATE_SPOT
+      DefaultCapacityProviderStrategy:
+        - CapacityProvider: FARGATE_SPOT
+          Weight: 1
+
+  CowrieLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub "/ecs/ghtm-cowrie-${Stage}"
+      RetentionInDays: 7
+
+  TaskExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ecs-tasks.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy
+
+  TaskRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ecs-tasks.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: S3LogShipperPolicy
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:PutObject
+                  - s3:PutObjectAcl
+                Resource: !Sub "arn:aws:s3:::${RawLogBucketName}/*"
+
+  CowrieTaskDefinition:
+    Type: AWS::ECS::TaskDefinition
+    Properties:
+      Family: !Sub "ghtm-cowrie-task-${Stage}"
+      NetworkMode: awsvpc
+      RequiresCompatibilities:
+        - FARGATE
+      Cpu: '256'
+      Memory: '512'
+      ExecutionRoleArn: !GetAtt TaskExecutionRole.Arn
+      TaskRoleArn: !GetAtt TaskRole.Arn
+      ContainerDefinitions:
+        - Name: cowrie
+          Image: !Ref ImageUrl
+          Essential: true
+          PortMappings:
+            - ContainerPort: 2222
+              Protocol: tcp
+          Environment:
+            - Name: S3_RAW_LOG_BUCKET
+              Value: !Ref RawLogBucketName
+            - Name: SHIPPER_INTERVAL_SEC
+              Value: "60"
+          LogConfiguration:
+            LogDriver: awslogs
+            Options:
+              awslogs-group: !Ref CowrieLogGroup
+              awslogs-region: !Ref AWS::Region
+              awslogs-stream-prefix: ecs
+
+  # Assuming the default VPC for this Free Tier setup.
+  # In a production environment, explicit VPCs + SecurityGroups should be mapped.
+  # For ease of mapping, we leave out the AWS::ECS::Service creation here to let
+  # the user run it via CLI `aws ecs run-task` OR define NetworkConfiguration parameters.
+
+Outputs:
+  ClusterName:
+    Value: !Ref CowrieCluster
+  TaskDefinitionArn:
+    Value: !Ref CowrieTaskDefinition

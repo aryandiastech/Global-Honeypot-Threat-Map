@@ -186,6 +186,31 @@ Resources:
             StartingPosition: LATEST
             BatchSize: 50
 
+  ClusterFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub "ghtm-cluster-${Stage}"
+      CodeUri: ../../pipeline/cluster_lambda/
+      Handler: handler.lambda_handler
+      Timeout: 120
+      MemorySize: 512
+      Environment:
+        Variables:
+          EVENTS_TABLE_NAME: !Ref EventsTable
+      Policies:
+        - Version: "2012-10-17"
+          Statement:
+            - Effect: Allow
+              Action:
+                - dynamodb:Scan
+                - dynamodb:UpdateItem
+              Resource: !GetAtt EventsTable.Arn
+      Events:
+        ScheduleRule:
+          Type: Schedule
+          Properties:
+            Schedule: rate(30 minutes)
+
 Outputs:
   RawLogBucketName:
     Description: Upload honeypot exports / log batches here; ObjectCreated triggers ingest.

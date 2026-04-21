@@ -1,39 +1,24 @@
-# Honeypot Tier (Cowrie SSH)
+# Honeypot Tier Architecture
 
-## Why Cowrie
+This page outlines the honeypot layer of our Global Threat Map.
 
-Cowrie is a widely used **medium-interaction** SSH/Telnet honeypot that records:
+## Technology Stack
+- **Honeypot Software**: [Cowrie SSH/Telnet Honeypot](https://github.com/cowrie/cowrie)
+- **Containerization**: Docker
+- **Deployment**: AWS ECS (Elastic Container Service) on Fargate Spot
 
-- connection attempts
-- authentication failures/successes
-- basic session activity (depending on config)
+## Design Decisions
+We chose Fargate to minimize server maintenance and eliminate the need for patching base EC2 instances, which is crucial for a security-related deployment. We utilize **Fargate Spot** to keep costs severely low (in many cases falling within the AWS Free Tier limitations when using 0.25 vCPU and 0.5 GB RAM).
 
-For the first deployment, we run **SSH only** (Telnet disabled) to keep the network surface minimal and align with a simple Fargate service.
+## The Log Shipper Daemon
+To adhere to best-practice separation of concerns without spinning up a heavy memory-intensive sidecar (like FluentBit), we incorporated a lightweight, custom Python script `log_shipper.py` directly into the Cowrie container via `start.sh`.
 
-## Containerization choices
+- It wakes up every 60 seconds.
+- It tails `/cowrie/cowrie-git/var/log/cowrie/cowrie.json`.
+- It dynamically ships the new JSONL events directly to our central S3 Bucket using temporary STS credentials provided by the ECS Task Role.
 
-- Base image: `cowrie/cowrie`
-- Container port: **2222**
-- Config path inside image: `/cowrie/cowrie-git/etc`
-
-Our repo image wrapper is at `honeypots/cowrie/` and includes:
-
-- `Dockerfile` (Fargate-friendly, avoids `chown`)
-- `docker-compose.yml` for local testing
-- `etc/cowrie.local.cfg` for overrides (Telnet disabled)
-
-## Local test
-
-```powershell
-cd honeypots/cowrie
-docker compose build
-docker compose up
-ssh -p 2222 root@127.0.0.1
-```
-
-## Notes on config mounting
-
-Cowrie’s Docker docs note that mounting `/cowrie/cowrie-git/etc` hides files in the image, so you must ensure needed config files exist in the mounted directory.
-
-Reference: Cowrie Docker repository docs `https://docs.cowrie.org/en/latest/docker/README.html`
-
+## Infrastructure as Code
+Deployments are managed using CloudFormation. The configuration file `fargate-deploy.yaml` specifies:
+- The ECS Cluster configuration
+- Our Task Definition (RAM/CPU boundaries)
+- IAM roles enforcing strict Least-Privilege access (`s3:PutObject` only on our specific log bucket)

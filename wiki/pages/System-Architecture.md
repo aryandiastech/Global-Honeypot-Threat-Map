@@ -1,41 +1,24 @@
 # System Architecture
 
-## End-to-end flow
+The Global Honeypot Threat Map employs an event-driven, multi-cloud layer architecture spanning the AWS Serverless stack and containerized Fargate clusters.
 
-```mermaid
-flowchart LR
-  A[Attackers on Internet] -->|SSH brute force / scans| H1[Cowrie on ECS Fargate<br/>ap-south-1]
-  A --> H2[Cowrie on ECS Fargate<br/>us-east-1]
+## 1. Interaction Layer (AWS ECS Fargate)
+- We host the honeypots (**Cowrie**) in Fargate Spot instances on explicit AWS Regions (e.g., `ap-south-1` and `us-east-1`).
+- Fargate inherently scales without the administrative overhead of configuring Elastic Cloud Compute (EC2) boundaries. 
 
-  H1 -->|batch logs| S3a[(S3 Raw Log Bucket<br/>per region)]
-  H2 -->|batch logs| S3b[(S3 Raw Log Bucket<br/>per region)]
+## 2. Ingestion & Logging (AWS S3 & CloudWatch)
+- The Cowrie nodes utilize an internal `log_shipper.py` to buffer malicious interactions into AWS S3 storage.
+- Using AWS standard Identity rules (Least-Privilege task execution roles), the shippers seamlessly trigger the processing cascade.
 
-  S3a -->|ObjectCreated| L1[Ingest Lambda]
-  S3b -->|ObjectCreated| L2[Ingest Lambda]
+## 3. Data Processing (Lambda & DynamoDB)
+- The Serverless Application Model (SAM) encapsulates Data Normalization via `ingest_lambda`. 
+- S3 bucket creations implicitly queue lambda invocations to structure the raw payload into a searchable NoSQL DynamoDB pattern.
+- Asynchronous DynamoDB Event Streams dispatch the data to further modules (like our IP Reputation engine `enrich_lambda`).
 
-  L1 --> D[(DynamoDB Events Table)]
-  L2 --> D
+## 4. Machine Learning Module
+- Unsupervised learning happens securely inside an isolated Lambda triggered chronologically by Amazon EventBridge.
+- It scrapes recent DynamoDB entries, tags "clusters", and updates the database, entirely circumventing the requirement for costly GPU-instances.
 
-  D --> R[Read API Lambda]
-  R --> API[HTTP API Gateway<br/>GET /events]
-  API --> UI[React Dashboard]
-
-  D --> ML[ML Job / Batch Processing]
-  ML --> D2[(Clusters / Reputation Store)]
-  D2 --> UI
-```
-
-## Why this architecture
-
-- **Fargate**: runs honeypots as containers with minimal server maintenance.
-- **S3**: cheap, durable landing zone for raw logs and reprocessing.
-- **Lambda**: event-driven parsing/normalization; scales with data.
-- **DynamoDB**: fast reads for dashboard and simple scaling for event ingestion.
-- **HTTP API**: lightweight public endpoint to power the dashboard feed.
-- **ML batch**: unsupervised clustering can run periodically without impacting ingest.
-
-## References
-
-- AWS: S3 triggers Lambda (`Process Amazon S3 event notifications with Lambda`) `https://docs.aws.amazon.com/lambda/latest/dg/with-s3.html`
-- AWS SAM policy templates (simplifies IAM in templates) `https://docs.aws.amazon.com/serverless-application-model/latest/developerguide/serverless-policy-templates.html`
-
+## 5. Web Interface (React & Mapbox)
+- Static assets deploy freely on platforms like Vercel or AWS Amplify.
+- Users connect directly to the Public API Gateway pulling cached NoSQL telemetry to draw 3-Dimensional attack maps.
