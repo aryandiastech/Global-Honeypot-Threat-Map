@@ -15,16 +15,26 @@ type RemoteEvent = {
   cowrie_eventid?: string;
   s3_key?: string;
   line_index?: number;
+  geo_lat?: number;
+  geo_lon?: number;
+  aws_region?: string;
+};
+
+const REGION_NODES: Record<string, { lon: number; lat: number; label: string }> = {
+  "ap-south-1": { lon: 72.8777, lat: 19.076, label: "Mumbai (ap-south-1)" },
+  "us-east-1": { lon: -77.0369, lat: 38.9072, label: "N. Virginia (us-east-1)" },
 };
 
 export default function App() {
   const mapEl = useRef<HTMLDivElement | null>(null);
+  const mapRef = useRef<mapboxgl.Map | null>(null);
   const [mapError, setMapError] = useState<string | null>(null);
 
   const [events, setEvents] = useState<RemoteEvent[]>([]);
   const [apiLoading, setApiLoading] = useState(() => Boolean(apiBase));
   const [apiError, setApiError] = useState<string | null>(null);
   const [lastUpdated, setLastUpdated] = useState<string | null>(null);
+  const [arcsDrawn, setArcsDrawn] = useState(0);
 
   useEffect(() => {
     if (!token) return;
@@ -51,10 +61,69 @@ export default function App() {
       setMapError(e.error?.message ?? "Map error");
     });
 
+    // Sources/layers for arcs will be (re)populated once events load.
+    map.on("load", () => {
+      try {
+        map.addSource("arcs", {
+          type: "geojson",
+          data: { type: "FeatureCollection", features: [] },
+        });
+        map.addLayer({
+          id: "arcs",
+          type: "line",
+          source: "arcs",
+          paint: {
+            "line-color": "rgba(61, 139, 253, 0.85)",
+            "line-width": 2,
+            "line-opacity": 0.75,
+          },
+        });
+      } catch {
+        // ignore if already exists
+      }
+    });
+
+    mapRef.current = map;
     return () => {
+      mapRef.current = null;
       map.remove();
     };
   }, [token]);
+
+  // Draw arcs whenever we have both a map and geo-enriched events.
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map) return;
+    if (!map.getSource("arcs")) return;
+
+    const features = events
+      .filter((e) => typeof e.geo_lat === "number" && typeof e.geo_lon === "number")
+      .slice(0, 200)
+      .map((e) => {
+        const region = (e.aws_region && REGION_NODES[e.aws_region] ? e.aws_region : "ap-south-1") as string;
+        const node = REGION_NODES[region];
+        return {
+          type: "Feature" as const,
+          properties: {
+            src_ip: e.src_ip ?? "",
+            region,
+            label: node.label,
+          },
+          geometry: {
+            type: "LineString" as const,
+            coordinates: [
+              [Number(e.geo_lon), Number(e.geo_lat)],
+              [node.lon, node.lat],
+            ],
+          },
+        };
+      });
+
+    const geojson = { type: "FeatureCollection" as const, features };
+    const src = map.getSource("arcs") as mapboxgl.GeoJSONSource;
+    src.setData(geojson as any);
+    setArcsDrawn(features.length);
+  }, [events]);
 
   useEffect(() => {
     if (!apiBase) {
@@ -78,7 +147,8 @@ export default function App() {
         }
         const data = (await res.json()) as { items?: RemoteEvent[] };
         if (!active) return;
-        setEvents(Array.isArray(data.items) ? data.items : []);
+        const items = Array.isArray(data.items) ? data.items : [];
+        setEvents(items);
         setLastUpdated(new Date().toLocaleTimeString());
       } catch (err: unknown) {
         if (!active) return;
@@ -147,6 +217,12 @@ export default function App() {
               <div className="kv">
                 <span>Feed</span>
                 <span className="muted small">auto-refresh ~{Math.round(POLL_MS / 1000)}s</span>
+              </div>
+            ) : null}
+            {token ? (
+              <div className="kv">
+                <span>Arcs</span>
+                <span className="muted small">{arcsDrawn} drawn</span>
               </div>
             ) : null}
             {lastUpdated ? (

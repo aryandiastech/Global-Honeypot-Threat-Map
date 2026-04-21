@@ -8,6 +8,16 @@ Parameters:
     Type: String
     Default: dev
     Description: Short name suffix for resource names (e.g. dev, prod).
+  IpinfoToken:
+    Type: String
+    NoEcho: true
+    Default: ""
+    Description: "IPinfo API token (NoEcho). Leave blank to disable geo enrichment."
+  AbuseIpdbKey:
+    Type: String
+    NoEcho: true
+    Default: ""
+    Description: "AbuseIPDB API key (NoEcho). Leave blank to disable reputation enrichment."
 
 Globals:
   Function:
@@ -39,6 +49,8 @@ Resources:
     Properties:
       TableName: !Sub "ghtm-honeypot-events-${Stage}"
       BillingMode: PAY_PER_REQUEST
+      StreamSpecification:
+        StreamViewType: NEW_IMAGE
       AttributeDefinitions:
         - AttributeName: event_id
           AttributeType: S
@@ -139,6 +151,41 @@ Resources:
             Path: /events
             Method: GET
 
+  EnrichFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub "ghtm-enrich-${Stage}"
+      CodeUri: ../../pipeline/enrich_lambda/
+      Handler: handler.lambda_handler
+      Timeout: 60
+      MemorySize: 256
+      Environment:
+        Variables:
+          EVENTS_TABLE_NAME: !Ref EventsTable
+          IPINFO_TOKEN: !Ref IpinfoToken
+          ABUSEIPDB_KEY: !Ref AbuseIpdbKey
+      Policies:
+        - Version: "2012-10-17"
+          Statement:
+            - Effect: Allow
+              Action:
+                - dynamodb:UpdateItem
+              Resource: !GetAtt EventsTable.Arn
+            - Effect: Allow
+              Action:
+                - dynamodb:DescribeStream
+                - dynamodb:GetRecords
+                - dynamodb:GetShardIterator
+                - dynamodb:ListStreams
+              Resource: !GetAtt EventsTable.StreamArn
+      Events:
+        TableStream:
+          Type: DynamoDB
+          Properties:
+            Stream: !GetAtt EventsTable.StreamArn
+            StartingPosition: LATEST
+            BatchSize: 50
+
 Outputs:
   RawLogBucketName:
     Description: Upload honeypot exports / log batches here; ObjectCreated triggers ingest.
@@ -155,3 +202,6 @@ Outputs:
   ListEventsFunctionArn:
     Description: Read API Lambda ARN.
     Value: !GetAtt ListEventsFunction.Arn
+  EnrichFunctionArn:
+    Description: Enrichment Lambda ARN (DynamoDB Stream consumer).
+    Value: !GetAtt EnrichFunction.Arn

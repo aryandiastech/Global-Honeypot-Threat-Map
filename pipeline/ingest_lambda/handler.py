@@ -48,7 +48,7 @@ def _extract_src_ip(obj: dict[str, Any]) -> str | None:
     return None
 
 
-def _process_object(*, bucket: str, key: str) -> int:
+def _process_object(*, bucket: str, key: str, aws_region: str | None) -> int:
     table = _ddb.Table(_TABLE_NAME)
     head = _s3.head_object(Bucket=bucket, Key=key)
     meta = head.get("Metadata") or {}
@@ -76,6 +76,7 @@ def _process_object(*, bucket: str, key: str) -> int:
             "received_at": received_at,
             # Timeline GSI partition for "recent events" API (read Lambda).
             "timeline_pk": "GLOBAL",
+            "aws_region": (aws_region or "")[:32],
             "s3_bucket": bucket,
             "s3_key": key,
             "line_index": idx,
@@ -109,12 +110,13 @@ def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
         try:
             bucket = record["s3"]["bucket"]["name"]
             key = urllib.parse.unquote_plus(record["s3"]["object"]["key"])
+            aws_region = record.get("awsRegion")
         except (KeyError, TypeError) as exc:
             errors.append(f"bad_record:{exc!s}")
             continue
 
         try:
-            total += _process_object(bucket=bucket, key=key)
+            total += _process_object(bucket=bucket, key=key, aws_region=aws_region if isinstance(aws_region, str) else None)
         except Exception as exc:  # noqa: BLE001 — log and continue per object
             errors.append(f"{bucket}/{key}:{exc!s}")
 
