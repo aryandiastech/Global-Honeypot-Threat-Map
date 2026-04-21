@@ -1,0 +1,10 @@
+services:
+  cowrie:
+    build: .
+    image: global-honeypot-cowrie:local
+    ports:
+      - "2222:2222"
+    volumes:
+      # Bind-mount avoids VOLUME masking issues on some hosts; edit cfg without rebuild.
+      - ./etc/cowrie.local.cfg:/cowrie/cowrie-git/etc/cowrie.local.cfg:ro
+    restart: unless-stopped

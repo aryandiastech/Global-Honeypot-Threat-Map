@@ -1,0 +1,2 @@
+# boto3 is provided in the AWS Lambda Python 3.12 runtime; listed for local editors only.
+boto3>=1.34.0,<2

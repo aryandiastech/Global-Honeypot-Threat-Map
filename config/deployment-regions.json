@@ -1,0 +1,13 @@
+{
+  "honeypot_regions": [
+    {
+      "id": "ap-south-1",
+      "label": "Asia Pacific (Mumbai)"
+    },
+    {
+      "id": "us-east-1",
+      "label": "US East (N. Virginia)"
+    }
+  ],
+  "data_plane_notes": "Default AWS CLI region may differ; ECS/Fargate tasks pin per-service region at deploy time."
+}
