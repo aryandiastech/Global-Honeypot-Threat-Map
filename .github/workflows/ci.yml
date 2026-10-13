@@ -23,8 +23,8 @@ jobs:
         working-directory: honeypots/cowrie
         run: docker compose build
 
-  ingest-lambda:
-    name: Python ingest Lambda (syntax)
+  python:
+    name: Lambdas, demo backend + unit tests
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -36,8 +36,14 @@ jobs:
       - name: Install deps (editor parity)
         run: pip install -r pipeline/ingest_lambda/requirements.txt
 
-      - name: Byte-compile handler
-        run: python -m compileall -q pipeline/ingest_lambda pipeline/read_api
+      - name: Byte-compile Lambdas and demo backend
+        run: python -m compileall -q pipeline demo honeypots/cowrie ml tests
+
+      - name: Unit tests (stdlib only — exercises the pure-Python DBSCAN path)
+        run: python -m unittest discover -s tests -v
+
+      - name: Demo backend snapshot export
+        run: python demo/server.py --export-snapshot /tmp/snapshot.json
 
       - name: Install script deps and byte-compile uploader
         run: |

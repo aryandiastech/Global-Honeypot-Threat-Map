@@ -1,80 +1,77 @@
+"""
+Scheduled Lambda: read recent events from DynamoDB, group attacking IPs into
+botnet clusters (see botnet_clustering.py) and write `cluster_id` back.
+
+No third-party dependencies — the DBSCAN implementation is pure Python, so the
+deployment package stays small (boto3 ships with the Lambda runtime).
+"""
+
+from __future__ import annotations
+
 import os
+from typing import Any
+
 import boto3
-import hashlib
-from datetime import datetime
-import numpy as np
-from sklearn.cluster import DBSCAN
 
-# Initialize Boto3 client
-dynamodb = boto3.resource('dynamodb')
-table_name = os.environ.get("EVENTS_TABLE_NAME")
+from botnet_clustering import NOISE, cluster_records
 
-def _hour_feature(isoish: str) -> float:
-    if not isoish:
-        return 0.0
-    try:
-        dt = datetime.fromisoformat(isoish.replace("Z", "+00:00"))
-        return float(dt.hour) / 23.0
-    except ValueError:
-        return 0.0
+_ddb = boto3.resource("dynamodb")
 
-def _ip_feature(ip: str) -> float:
-    digest = hashlib.sha256(ip.encode("utf-8", errors="replace")).digest()
-    return int.from_bytes(digest[:4], "big", signed=False) / float(0xFFFFFFFF)
+# Upper bound on events pulled per run (keeps the O(n^2) step and the scan cost bounded).
+_MAX_EVENTS = int(os.environ.get("CLUSTER_MAX_EVENTS", "5000"))
 
-def lambda_handler(event, context):
+
+def _recent_events(table: Any) -> list[dict[str, Any]]:
+    """Newest events first via the timeline GSI (avoids a full-table scan)."""
+    items: list[dict[str, Any]] = []
+    kwargs: dict[str, Any] = {
+        "IndexName": "timeline-received_at",
+        "KeyConditionExpression": "timeline_pk = :pk",
+        "ExpressionAttributeValues": {":pk": "GLOBAL"},
+        "ScanIndexForward": False,
+    }
+    while len(items) < _MAX_EVENTS:
+        resp = table.query(**kwargs)
+        items.extend(resp.get("Items", []))
+        last = resp.get("LastEvaluatedKey")
+        if not last:
+            break
+        kwargs["ExclusiveStartKey"] = last
+    return items[:_MAX_EVENTS]
+
+
+def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
+    table_name = os.environ.get("EVENTS_TABLE_NAME")
     if not table_name:
         print("EVENTS_TABLE_NAME not set.")
-        return
+        return {"status": "error", "reason": "EVENTS_TABLE_NAME not set"}
 
-    table = dynamodb.Table(table_name)
-    
-    # Simple scan up to 1000 items to cluster (in a real app, use secondary index by received_at)
-    response = table.scan(Limit=1000)
-    items = response.get('Items', [])
-    
+    table = _ddb.Table(table_name)
+    items = _recent_events(table)
     if len(items) < 2:
         print("Not enough items to cluster.")
-        return
+        return {"status": "skipped", "events": len(items)}
 
-    # Extract features
-    valid_items = []
-    features = []
-    
-    for item in items:
-        # Require src_ip and received_at to cluster effectively
-        if 'src_ip' in item and 'received_at' in item:
-            valid_items.append(item)
-            features.append([
-                _ip_feature(item['src_ip']), 
-                _hour_feature(item['received_at'])
-            ])
+    result = cluster_records(items)
 
-    if len(valid_items) < 2:
-        return
-
-    # Run DBSCAN
-    feats_array = np.array(features, dtype=np.float64)
-    model = DBSCAN(eps=0.12, min_samples=2)
-    labels = model.fit_predict(feats_array)
-    
     updates = 0
-    # Update DynamoDB with cluster_id
-    # Note: AWS limits 1 update per request, we do simple looped updates
-    for idx, label in enumerate(labels.tolist()):
-        cluster_id = int(label)
-        item = valid_items[idx]
-        
-        # Avoid unnecessary DB writes if cluster_id is already the same
-        current_cluster = item.get('cluster_id')
-        # DynamoDB uses decimal/int, so compare numeric values
-        if current_cluster is None or int(current_cluster) != cluster_id:
-            table.update_item(
-                Key={'event_id': item['event_id']},
-                UpdateExpression="set cluster_id = :val",
-                ExpressionAttributeValues={':val': cluster_id}
-            )
-            updates += 1
+    for item in items:
+        ip = item.get("src_ip")
+        cluster_id = result.ip_labels.get(ip, NOISE) if isinstance(ip, str) else NOISE
+        current = item.get("cluster_id")
+        # Skip unchanged rows (DynamoDB returns numbers as Decimal).
+        if current is not None and int(current) == cluster_id:
+            continue
+        table.update_item(
+            Key={"event_id": item["event_id"]},
+            UpdateExpression="SET cluster_id = :val",
+            ExpressionAttributeValues={":val": cluster_id},
+        )
+        updates += 1
 
-    print(f"Clustered {len(valid_items)} items. Clusters generated (including noise): {len(set(labels))}. DB updates made: {updates}")
-    return {"status": "success", "updated": updates}
+    print(
+        f"Clustered {len(items)} events from {len(result.ip_labels)} IPs into "
+        f"{len(result.clusters)} botnets ({result.n_noise_ips} noise IPs) with {result.engine}; "
+        f"{updates} rows updated."
+    )
+    return {"status": "success", "clusters": len(result.clusters), "updated": updates}

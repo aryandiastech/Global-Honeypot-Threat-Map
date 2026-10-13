@@ -2,7 +2,7 @@
 
 Deploys:
 
-- **S3** bucket for raw JSONL logs (ObjectCreated `*.jsonl` triggers Lambda).
+- **S3** bucket for raw JSONL logs (any ObjectCreated triggers the ingest Lambda).
 - **Lambda** (`pipeline/ingest_lambda`) that reads each object and writes one DynamoDB item per non-empty JSON line.
 - **DynamoDB** table with partition key `event_id` and GSI `src_ip-received_at` for map/API queries later.
 
@@ -55,7 +55,9 @@ VITE_API_URL=https://xxxxxxxx.execute-api.REGION.amazonaws.com
 
 **Note:** items ingested **before** the `timeline-received_at` GSI existed will not appear until re-ingested (they lack `timeline_pk`).
 
-## Next wiring steps (later milestones)
+## Also in this stack
 
-- Honeypot → S3: sidecar uploader, FireLens, or scheduled `aws s3 cp` from Fargate.
-- Enrichment Lambda: **IP geolocation** + optional **threat intel** (create API accounts then; not required for this stack).
+- **EnrichFunction**: DynamoDB Stream (INSERT only) → IPinfo geo + AbuseIPDB score. Pass `IpinfoToken` / `AbuseIpdbKey` parameters; leave them blank to skip enrichment.
+- **ClusterFunction**: every 30 min, behavioural DBSCAN over the newest events → `cluster_id`.
+
+Honeypot → S3 is handled by the Cowrie container itself (`infra/ecs/fargate-deploy.yaml`). See `../../DEPLOY-AWS.md` for the full walkthrough.

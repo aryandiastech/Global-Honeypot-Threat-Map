@@ -25,7 +25,15 @@ ssh -p 2222 root@127.0.0.1
 
 - Map container port **2222** (TCP) in the task definition.
 - Prefer **awsvpc** networking; security group should allow **2222** from the internet only if you intend a public honeypot.
-- Log shipping to S3 is handled in the data-pipeline workstream (sidecar, FireLens, or scheduled upload), not in this image’s first milestone.
+- Log shipping: set `S3_RAW_LOG_BUCKET` on the task and `entrypoint.py` starts `log_shipper.py`, which uploads new `cowrie.json` lines to S3 every `SHIPPER_INTERVAL_SEC` (default 60). The S3 upload triggers the ingest Lambda.
+
+## How the entrypoint works
+
+The upstream image is **distroless** (no `/bin/sh`), so the container starts `entrypoint.py` with Cowrie's own Python. It launches the log shipper thread (only when a bucket is configured), runs Cowrie as a child process and forwards `SIGTERM`. `boto3` is installed in a separate build stage and copied to `/opt/shipper-deps`.
+
+## Live demo without AWS
+
+`docker compose up` writes `cowrie.json` into `./logs/`. Run the local demo backend with `--cowrie-log` (see `DEMO.md` in the repo root) and every SSH attempt against port 2222 appears on the dashboard within seconds.
 
 ## Pinning the base image
 

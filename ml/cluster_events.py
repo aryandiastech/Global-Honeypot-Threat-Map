@@ -1,28 +1,33 @@
 #!/usr/bin/env python3
 """
-Offline clustering stub for honeypot events.
+Offline botnet clustering for honeypot events.
 
 Reads JSON from:
   - a file containing {"items":[...]} (read API export), or
   - JSONL where each line is one object (Dynamo-ish or Cowrie-ish).
 
-Builds a tiny 2D numeric feature vector per row and runs DBSCAN.
-This is intentionally simple for a first milestone; swap in richer features later.
+Groups events into one behavioural profile per attacking IP and runs DBSCAN
+(see pipeline/cluster_lambda/botnet_clustering.py — the same code the
+scheduled Lambda and the local demo backend use). Writes each record back
+with a `cluster_id` (-1 = noise / not part of a botnet).
 """
 
 from __future__ import annotations
 
 import argparse
-import hashlib
 import json
 import sys
-from dataclasses import dataclass
-from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-import numpy as np
-from sklearn.cluster import DBSCAN
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "pipeline" / "cluster_lambda"))
+
+from botnet_clustering import (  # noqa: E402
+    DEFAULT_EPS,
+    DEFAULT_MIN_SAMPLES,
+    cluster_records,
+    label_records,
+)
 
 
 def _load_records(path: Path) -> list[dict[str, Any]]:
@@ -37,8 +42,7 @@ def _load_records(path: Path) -> list[dict[str, Any]]:
         return [json.loads(line) for line in lines]
 
     # Single blob: API export {"items":[...]} / array / one object.
-    single = lines[0]
-    data = json.loads(single)
+    data = json.loads(lines[0])
     if isinstance(data, dict) and isinstance(data.get("items"), list):
         return [x for x in data["items"] if isinstance(x, dict)]
     if isinstance(data, list):
@@ -48,59 +52,12 @@ def _load_records(path: Path) -> list[dict[str, Any]]:
     raise ValueError("Unsupported JSON shape.")
 
 
-def _src_ip(rec: dict[str, Any]) -> str:
-    for k in ("src_ip", "srcIp", "peer_ip", "peerIP"):
-        v = rec.get(k)
-        if isinstance(v, str) and v.strip():
-            return v.strip()
-    return "unknown"
-
-
-def _time_text(rec: dict[str, Any]) -> str | None:
-    for k in ("received_at", "sensor_timestamp", "timestamp"):
-        v = rec.get(k)
-        if isinstance(v, str) and v.strip():
-            return v.strip()
-    return None
-
-
-def _hour_feature(isoish: str | None) -> float:
-    if not isoish:
-        return 0.0
-    try:
-        # Accept ISO8601-ish strings; fall back to 0 on parse failure.
-        dt = datetime.fromisoformat(isoish.replace("Z", "+00:00"))
-        return float(dt.hour) / 23.0
-    except ValueError:
-        return 0.0
-
-
-def _ip_feature(ip: str) -> float:
-    digest = hashlib.sha256(ip.encode("utf-8", errors="replace")).digest()
-    return int.from_bytes(digest[:4], "big", signed=False) / float(0xFFFFFFFF)
-
-
-@dataclass(frozen=True)
-class ClusterResult:
-    labels: np.ndarray
-    n_clusters: int
-    n_noise: int
-
-
-def run_dbscan(features: np.ndarray, *, eps: float, min_samples: int) -> ClusterResult:
-    model = DBSCAN(eps=eps, min_samples=min_samples)
-    labels = model.fit_predict(features)
-    n_clusters = len({x for x in labels.tolist() if x != -1})
-    n_noise = int((labels == -1).sum())
-    return ClusterResult(labels=labels, n_clusters=n_clusters, n_noise=n_noise)
-
-
 def main() -> int:
-    parser = argparse.ArgumentParser(description=__doc__)
+    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--input", type=Path, required=True, help="Path to JSON or JSONL input.")
     parser.add_argument("--output", type=Path, default=None, help="Write labeled JSONL here (stdout if omitted).")
-    parser.add_argument("--eps", type=float, default=0.12, help="DBSCAN eps (feature space is roughly [0,1]^2).")
-    parser.add_argument("--min-samples", type=int, default=2, help="DBSCAN min_samples.")
+    parser.add_argument("--eps", type=float, default=DEFAULT_EPS, help="DBSCAN eps in weighted feature space.")
+    parser.add_argument("--min-samples", type=int, default=DEFAULT_MIN_SAMPLES, help="DBSCAN min_samples (IPs).")
     args = parser.parse_args()
 
     records = _load_records(args.input)
@@ -108,19 +65,10 @@ def main() -> int:
         print("Need at least 2 records to cluster meaningfully.", file=sys.stderr)
         return 2
 
-    feats = np.array(
-        [[_ip_feature(_src_ip(r)), _hour_feature(_time_text(r))] for r in records],
-        dtype=np.float64,
-    )
-    result = run_dbscan(feats, eps=args.eps, min_samples=args.min_samples)
+    result = cluster_records(records, eps=args.eps, min_samples=args.min_samples)
+    label_records(records, result)
 
-    out_lines: list[str] = []
-    for rec, label in zip(records, result.labels.tolist(), strict=True):
-        row = dict(rec)
-        row["cluster_id"] = int(label)
-        out_lines.append(json.dumps(row, ensure_ascii=False))
-
-    payload = "\n".join(out_lines) + "\n"
+    payload = "\n".join(json.dumps(r, ensure_ascii=False) for r in records) + "\n"
     if args.output:
         args.output.write_text(payload, encoding="utf-8")
     else:
@@ -128,10 +76,13 @@ def main() -> int:
 
     meta = {
         "records": len(records),
-        "clusters": result.n_clusters,
-        "noise": result.n_noise,
+        "ips": len(result.ip_labels),
+        "clusters": len(result.clusters),
+        "noise_ips": result.n_noise_ips,
+        "engine": result.engine,
         "eps": args.eps,
         "min_samples": args.min_samples,
+        "botnets": result.clusters,
     }
     print(json.dumps(meta, indent=2), file=sys.stderr)
     return 0

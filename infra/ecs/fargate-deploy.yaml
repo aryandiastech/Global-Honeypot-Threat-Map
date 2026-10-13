@@ -1,7 +1,8 @@
 AWSTemplateFormatVersion: "2010-09-09"
 Description: >
   Global Honeypot Threat Map — Fargate Deployment for Cowrie.
-  Deploys an ECS Cluster, Task Definition, and a Service on Free-Tier friendly limits.
+  Deploys an ECS cluster, task definition, security group and a Fargate Spot service
+  (0.25 vCPU / 0.5 GB) running the Cowrie image with the S3 log shipper enabled.
 
 Parameters:
   Stage:
@@ -14,6 +15,18 @@ Parameters:
   RawLogBucketName:
     Type: String
     Description: Name of the S3 bucket to ship logs to (from SAM stack).
+  VpcId:
+    Type: AWS::EC2::VPC::Id
+    Description: VPC for the honeypot (the default VPC is fine).
+  SubnetIds:
+    Type: List<AWS::EC2::Subnet::Id>
+    Description: Public subnets (route to an Internet Gateway) — tasks get a public IP.
+  DesiredCount:
+    Type: Number
+    Default: 1
+    MinValue: 0
+    MaxValue: 3
+    Description: Number of honeypot tasks. Set 0 to pause the honeypot without deleting the stack.
 
 Resources:
   CowrieCluster:
@@ -63,7 +76,6 @@ Resources:
               - Effect: Allow
                 Action:
                   - s3:PutObject
-                  - s3:PutObjectAcl
                 Resource: !Sub "arn:aws:s3:::${RawLogBucketName}/*"
 
   CowrieTaskDefinition:
@@ -89,6 +101,8 @@ Resources:
               Value: !Ref RawLogBucketName
             - Name: SHIPPER_INTERVAL_SEC
               Value: "60"
+            - Name: AWS_REGION
+              Value: !Ref AWS::Region
           LogConfiguration:
             LogDriver: awslogs
             Options:
@@ -96,13 +110,52 @@ Resources:
               awslogs-region: !Ref AWS::Region
               awslogs-stream-prefix: ecs
 
-  # Assuming the default VPC for this Free Tier setup.
-  # In a production environment, explicit VPCs + SecurityGroups should be mapped.
-  # For ease of mapping, we leave out the AWS::ECS::Service creation here to let
-  # the user run it via CLI `aws ecs run-task` OR define NetworkConfiguration parameters.
+  # Public honeypot: SSH (Cowrie on 2222) is intentionally open to the internet.
+  # No other inbound ports; the task has no access to anything but its S3 prefix.
+  HoneypotSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: !Sub "ghtm-cowrie-${Stage} - public SSH honeypot"
+      VpcId: !Ref VpcId
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 2222
+          ToPort: 2222
+          CidrIp: 0.0.0.0/0
+          Description: Cowrie SSH honeypot
+      SecurityGroupEgress:
+        - IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          CidrIp: 0.0.0.0/0
+          Description: HTTPS to S3 / ECR / CloudWatch only
+
+  CowrieService:
+    Type: AWS::ECS::Service
+    Properties:
+      ServiceName: !Sub "ghtm-cowrie-${Stage}"
+      Cluster: !Ref CowrieCluster
+      TaskDefinition: !Ref CowrieTaskDefinition
+      DesiredCount: !Ref DesiredCount
+      CapacityProviderStrategy:
+        - CapacityProvider: FARGATE_SPOT
+          Weight: 1
+      NetworkConfiguration:
+        AwsvpcConfiguration:
+          AssignPublicIp: ENABLED
+          SecurityGroups:
+            - !Ref HoneypotSecurityGroup
+          Subnets: !Ref SubnetIds
+      DeploymentConfiguration:
+        MinimumHealthyPercent: 0
+        MaximumPercent: 100
 
 Outputs:
   ClusterName:
     Value: !Ref CowrieCluster
   TaskDefinitionArn:
     Value: !Ref CowrieTaskDefinition
+  ServiceName:
+    Value: !GetAtt CowrieService.Name
+  SecurityGroupId:
+    Value: !Ref HoneypotSecurityGroup

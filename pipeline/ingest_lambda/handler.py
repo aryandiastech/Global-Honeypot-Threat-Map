@@ -1,8 +1,11 @@
 """
 S3 ObjectCreated -> parse JSONL (Cowrie-style) -> DynamoDB put_item.
 
-No third-party APIs here; Mapbox / geolocation / threat-intel are added later
-when building the frontend and enrichment Lambdas.
+No third-party APIs here; geo-IP and reputation are added by the enrich Lambda
+(DynamoDB Stream consumer) after the row lands.
+
+`normalize_cowrie_record` is a pure function so the local demo backend
+(demo/server.py) can reuse the exact same event schema without AWS.
 """
 
 from __future__ import annotations
@@ -15,11 +18,20 @@ import urllib.parse
 from datetime import datetime, timezone
 from typing import Any
 
-import boto3
+# AWS clients are created lazily so this module can be imported without boto3
+# (the local demo backend only needs `normalize_cowrie_record`).
+_s3 = None
+_ddb = None
 
-_s3 = boto3.client("s3")
-_ddb = boto3.resource("dynamodb")
-_TABLE_NAME = os.environ["EVENTS_TABLE_NAME"]
+
+def _clients() -> tuple[Any, Any]:
+    global _s3, _ddb
+    if _s3 is None or _ddb is None:
+        import boto3  # noqa: PLC0415
+
+        _s3 = boto3.client("s3")
+        _ddb = boto3.resource("dynamodb")
+    return _s3, _ddb
 
 
 def _sha256_id(*parts: str) -> str:
@@ -42,18 +54,63 @@ def _extract_src_ip(obj: dict[str, Any]) -> str | None:
         v = obj.get(k)
         if isinstance(v, str) and v.strip():
             return v.strip()
-    session = obj.get("session")
-    if isinstance(session, str) and session.strip():
-        return session.strip()
+    # Note: Cowrie's `session` is a session id, not an address — never use it as src_ip.
     return None
 
 
+def _str_field(obj: dict[str, Any], key: str, max_len: int) -> str | None:
+    v = obj.get(key)
+    if isinstance(v, str) and v.strip():
+        return v.strip()[:max_len]
+    return None
+
+
+def normalize_cowrie_record(
+    data: dict[str, Any],
+    *,
+    bucket: str,
+    key: str,
+    line_index: int,
+    received_at: str,
+    aws_region: str | None,
+) -> dict[str, Any]:
+    """Map one Cowrie JSON log object to the DynamoDB event item schema."""
+    item: dict[str, Any] = {
+        "event_id": _sha256_id(bucket, key, str(line_index)),
+        "received_at": received_at,
+        # Timeline GSI partition for "recent events" API (read Lambda).
+        "timeline_pk": "GLOBAL",
+        "aws_region": (aws_region or "")[:32],
+        "s3_bucket": bucket,
+        "s3_key": key,
+        "line_index": line_index,
+    }
+
+    optional = {
+        "cowrie_eventid": _str_field(data, "eventid", 1024),
+        "src_ip": _extract_src_ip(data),
+        "sensor_timestamp": _str_field(data, "timestamp", 64),
+        "session": _str_field(data, "session", 64),
+        "sensor": _str_field(data, "sensor", 128),
+        # Credentials and commands drive the botnet clustering features.
+        "username": _str_field(data, "username", 256),
+        "password": _str_field(data, "password", 256),
+        "command": _str_field(data, "input", 1024),
+        "client_version": _str_field(data, "version", 256),
+    }
+    for k, v in optional.items():
+        if v is not None:
+            item[k] = v[:64] if k == "src_ip" else v
+    return item
+
+
 def _process_object(*, bucket: str, key: str, aws_region: str | None) -> int:
-    table = _ddb.Table(_TABLE_NAME)
-    head = _s3.head_object(Bucket=bucket, Key=key)
+    s3, ddb = _clients()
+    table = ddb.Table(os.environ["EVENTS_TABLE_NAME"])
+    head = s3.head_object(Bucket=bucket, Key=key)
     meta = head.get("Metadata") or {}
 
-    obj_body = _s3.get_object(Bucket=bucket, Key=key)
+    obj_body = s3.get_object(Bucket=bucket, Key=key)
     raw = obj_body["Body"].read()
     raw = _maybe_decompress(raw, key=key, metadata=meta)
     text = raw.decode("utf-8", errors="replace")
@@ -61,41 +118,29 @@ def _process_object(*, bucket: str, key: str, aws_region: str | None) -> int:
     received_at = datetime.now(timezone.utc).isoformat()
     written = 0
 
-    for idx, line in enumerate(text.splitlines()):
-        line = line.strip()
-        if not line:
-            continue
-        try:
-            data: dict[str, Any] = json.loads(line)
-        except json.JSONDecodeError:
-            continue
+    with table.batch_writer() as batch:
+        for idx, line in enumerate(text.splitlines()):
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                data = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if not isinstance(data, dict):
+                continue
 
-        event_id = _sha256_id(bucket, key, str(idx))
-        item: dict[str, Any] = {
-            "event_id": event_id,
-            "received_at": received_at,
-            # Timeline GSI partition for "recent events" API (read Lambda).
-            "timeline_pk": "GLOBAL",
-            "aws_region": (aws_region or "")[:32],
-            "s3_bucket": bucket,
-            "s3_key": key,
-            "line_index": idx,
-        }
-
-        cowrie_event = data.get("eventid")
-        if isinstance(cowrie_event, str):
-            item["cowrie_eventid"] = cowrie_event[:1024]
-
-        src_ip = _extract_src_ip(data)
-        if src_ip:
-            item["src_ip"] = src_ip[:64]
-
-        ts = data.get("timestamp")
-        if isinstance(ts, str) and ts.strip():
-            item["sensor_timestamp"] = ts.strip()[:64]
-
-        table.put_item(Item=item)
-        written += 1
+            batch.put_item(
+                Item=normalize_cowrie_record(
+                    data,
+                    bucket=bucket,
+                    key=key,
+                    line_index=idx,
+                    received_at=received_at,
+                    aws_region=aws_region,
+                )
+            )
+            written += 1
 
     return written
 

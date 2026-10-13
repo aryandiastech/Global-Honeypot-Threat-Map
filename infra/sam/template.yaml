@@ -110,6 +110,7 @@ Resources:
             - Effect: Allow
               Action:
                 - dynamodb:PutItem
+                - dynamodb:BatchWriteItem
               Resource: !GetAtt EventsTable.Arn
             - Effect: Allow
               Action:
@@ -202,9 +203,11 @@ Resources:
           Statement:
             - Effect: Allow
               Action:
-                - dynamodb:Scan
+                - dynamodb:Query
                 - dynamodb:UpdateItem
-              Resource: !GetAtt EventsTable.Arn
+              Resource:
+                - !GetAtt EventsTable.Arn
+                - !Sub "${EventsTable.Arn}/index/*"
       Events:
         ScheduleRule:
           Type: Schedule
@@ -230,3 +233,6 @@ Outputs:
   EnrichFunctionArn:
     Description: Enrichment Lambda ARN (DynamoDB Stream consumer).
     Value: !GetAtt EnrichFunction.Arn
+  ClusterFunctionArn:
+    Description: Scheduled botnet clustering Lambda ARN.
+    Value: !GetAtt ClusterFunction.Arn
