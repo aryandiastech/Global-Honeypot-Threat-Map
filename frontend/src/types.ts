@@ -55,3 +55,43 @@ export type Stats = {
 
 /** Where the dashboard's data came from. */
 export type FeedSource = "aws" | "local-demo" | "snapshot" | "none";
+
+/** Live attack simulation status (local demo backend only). */
+export type SimulationStatus = {
+  running: boolean;
+  min_interval: number;
+  max_interval: number;
+  attacks: number;
+  started_at: string | null;
+  next_attack_at: string | null;
+  last_attack: {
+    src_ip?: string;
+    session?: string;
+    aws_region?: string;
+    geo_city?: string;
+    geo_country?: string;
+    at?: string;
+  } | null;
+};
+
+/** One attack = one Cowrie session (connect → logins → commands → close). */
+export type AttackSession = {
+  key: string;
+  session?: string;
+  src_ip: string;
+  start: string;
+  end: string;
+  aws_region?: string;
+  sensor?: string;
+  client?: string;
+  failed: number;
+  success: boolean;
+  credential?: string;
+  commands: string[];
+  downloads: number;
+  cluster_id?: number | string;
+  /** representative row (carries geo / reputation fields) */
+  head: RemoteEvent;
+  /** oldest → newest */
+  events: RemoteEvent[];
+};

@@ -10,7 +10,9 @@ import importlib.util
 import json
 import sys
 import threading
+import time
 import unittest
+import urllib.error
 import urllib.request
 from http.server import ThreadingHTTPServer
 from pathlib import Path
@@ -111,18 +113,54 @@ class DemoServerTests(unittest.TestCase):
                                       use_live_intel=False)
         cls.store.ingest(sim.history(hours=6), source="test", use_event_time=True)
         cls.store.recluster()
-        cls.httpd = ThreadingHTTPServer(("127.0.0.1", 0), server.make_handler(cls.store, "test"))
+        cls.sim_ctl = server.SimulationController(cls.store, sim, min_interval=0.05, max_interval=0.1)
+        cls.httpd = ThreadingHTTPServer(("127.0.0.1", 0), server.make_handler(cls.store, "test", cls.sim_ctl))
         threading.Thread(target=cls.httpd.serve_forever, daemon=True).start()
         cls.base = f"http://127.0.0.1:{cls.httpd.server_address[1]}"
 
     @classmethod
     def tearDownClass(cls) -> None:
+        cls.sim_ctl.stop()
         cls.httpd.shutdown()
         cls.httpd.server_close()
 
     def _get(self, path: str):
         with urllib.request.urlopen(self.base + path) as r:
             return r.status, json.loads(r.read()), r.headers
+
+    def _post(self, path: str):
+        req = urllib.request.Request(self.base + path, data=b"", method="POST")
+        with urllib.request.urlopen(req) as r:
+            return r.status, json.loads(r.read())
+
+    def test_simulation_start_stop(self) -> None:
+        _, status, _ = self._get("/simulation")
+        self.assertFalse(status["running"])
+        before = self.store.stats()["total_events"]
+        _, started = self._post("/simulation/start")
+        self.assertTrue(started["running"])
+        deadline = time.time() + 5
+        while self.sim_ctl.attacks < 2 and time.time() < deadline:
+            time.sleep(0.05)
+        _, stopped = self._post("/simulation/stop")
+        self.assertFalse(stopped["running"])
+        self.assertGreaterEqual(stopped["attacks"], 2)
+        self.assertGreater(self.store.stats()["total_events"], before)
+        n = self.store.stats()["total_events"]
+        time.sleep(0.3)  # stays stopped
+        self.assertEqual(self.store.stats()["total_events"], n)
+        _, events, _ = self._get("/events?limit=1")
+        self.assertIn("simulation", events)
+
+    def test_attacker_details(self) -> None:
+        _, body, _ = self._get("/events?limit=1")
+        ip = body["items"][0]["src_ip"]
+        _, detail, _ = self._get(f"/attackers/{ip}")
+        self.assertEqual(detail["ip"], ip)
+        self.assertTrue(all(e["src_ip"] == ip for e in detail["events"]))
+        with self.assertRaises(urllib.error.HTTPError) as ctx:
+            self._get("/attackers/192.0.2.254")
+        self.assertEqual(ctx.exception.code, 404)
 
     def test_events_contract(self) -> None:
         status, body, headers = self._get("/events?limit=10")

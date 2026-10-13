@@ -1,6 +1,6 @@
 #!/usr/bin/env sh
 # One-click local demo (macOS / Linux / Git Bash). No AWS account needed.
-#   ./start-demo.sh            simulated live traffic
+#   ./start-demo.sh            dashboard + backend (press Start in the dashboard for live attacks)
 #   ./start-demo.sh --cowrie   also tail a real Cowrie honeypot (docker compose in honeypots/cowrie)
 set -e
 cd "$(dirname "$0")"
@@ -12,7 +12,7 @@ command -v npm >/dev/null || { echo "Missing Node.js LTS (https://nodejs.org/)";
 
 EXTRA=""
 [ "$1" = "--cowrie" ] && EXTRA="--cowrie-log honeypots/cowrie/logs/cowrie.json"
-"$PY" demo/server.py --live $EXTRA &
+"$PY" demo/server.py $EXTRA &
 BACKEND=$!
 trap 'kill $BACKEND 2>/dev/null' EXIT INT TERM
 echo "Backend: http://localhost:8000/events?limit=5   Dashboard: http://localhost:5173"
