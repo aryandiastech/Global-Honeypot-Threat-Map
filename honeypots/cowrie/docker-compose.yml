@@ -7,4 +7,11 @@ services:
     volumes:
       # Bind-mount avoids VOLUME masking issues on some hosts; edit cfg without rebuild.
       - ./etc/cowrie.local.cfg:/cowrie/cowrie-git/etc/cowrie.local.cfg:ro
+      # Exposes cowrie.json on the host so the local demo backend can tail it
+      # (python demo/server.py --cowrie-log honeypots/cowrie/logs/cowrie.json).
+      # On Linux hosts you may need: chmod 777 logs
+      - ./logs:/cowrie/cowrie-git/var/log/cowrie
+    environment:
+      # Leave empty locally. On AWS the ECS task sets this to the SAM RawLogBucketName.
+      S3_RAW_LOG_BUCKET: ""
     restart: unless-stopped

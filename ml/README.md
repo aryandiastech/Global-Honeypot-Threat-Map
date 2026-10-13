@@ -1,26 +1,34 @@
-# ML — clustering stub
+# ML — botnet clustering (offline CLI)
 
-`cluster_events.py` runs **DBSCAN** on a toy 2D feature space:
+`cluster_events.py` runs the same clustering as the scheduled Lambda and the local demo
+(`pipeline/cluster_lambda/botnet_clustering.py`) on an exported file:
 
-- `x`: stable hash of `src_ip` scaled to \([0,1]\)
-- `y`: hour-of-day from `received_at` / `sensor_timestamp` / `timestamp` scaled to \([0,1]\)
+- one **behavioural profile per attacking IP** (credential dictionary, payload commands, SSH client, login/command/success ratios),
+- a weighted **Jaccard + ratio distance** between profiles,
+- **DBSCAN** on the precomputed distance matrix (`eps=0.25`, `min_samples=3`); `-1` = noise / lone scanner.
 
-## Install
+## Install (optional)
+
+The code is pure Python. scikit-learn is used automatically if installed:
 
 ```powershell
 python -m pip install -r ml/requirements.txt
 ```
 
-## Run (fixture)
+## Run
 
 ```powershell
+# fixture (2 lines -> 1 IP -> noise)
 python ml/cluster_events.py --input pipeline/fixtures/sample_cowrie_lines.jsonl --output ml/out-labeled.jsonl
+
+# realistic: export from the running demo backend (or the AWS read API) and cluster it
+curl "http://localhost:8000/events?limit=500" -o ml/export.json
+python ml/cluster_events.py --input ml/export.json --output ml/out-labeled.jsonl
 ```
 
-Metadata prints to **stderr**; labeled JSONL prints to **stdout** (or `--output`).
+Metadata (cluster sizes, top credentials and commands per botnet) prints to **stderr**, and labeled JSONL goes to `--output`.
 
-## Next steps for the full “botnet” story
+## Evaluation
 
-- Engineer higher-signal features (ASN, user/password entropy, command sequences).
-- Run on a scheduled basis (EventBridge + Fargate task or SageMaker Processing).
-- Persist `cluster_id` back to DynamoDB or a side table for the dashboard.
+`tests/test_pipeline.py` clusters simulated traffic with known ground truth (6 botnets + 45 lone scanners)
+and asserts every cluster is pure and every botnet is found, with both the scikit-learn and pure-Python engines.

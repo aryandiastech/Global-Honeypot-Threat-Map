@@ -11,7 +11,7 @@ This page outlines the honeypot layer of our Global Threat Map.
 We chose Fargate to minimize server maintenance and eliminate the need for patching base EC2 instances, which is crucial for a security-related deployment. We utilize **Fargate Spot** to keep costs severely low (in many cases falling within the AWS Free Tier limitations when using 0.25 vCPU and 0.5 GB RAM).
 
 ## The Log Shipper Daemon
-To adhere to best-practice separation of concerns without spinning up a heavy memory-intensive sidecar (like FluentBit), we incorporated a lightweight, custom Python script `log_shipper.py` directly into the Cowrie container via `start.sh`.
+To adhere to best-practice separation of concerns without spinning up a heavy memory-intensive sidecar (like FluentBit), we incorporated a lightweight, custom Python script `log_shipper.py` directly into the Cowrie container. Because the upstream Cowrie image is distroless (no `/bin/sh`), the container starts `entrypoint.py` with Cowrie's own Python interpreter: it launches the shipper in a background thread (only when `S3_RAW_LOG_BUCKET` is set), runs Cowrie as a child process and forwards `SIGTERM` for clean ECS shutdowns. `boto3` is installed in a separate Docker build stage and copied in.
 
 - It wakes up every 60 seconds.
 - It tails `/cowrie/cowrie-git/var/log/cowrie/cowrie.json`.

@@ -17,10 +17,20 @@ import urllib.request
 from decimal import Decimal
 from typing import Any
 
-import boto3
+# boto3 / table name are resolved lazily so the lookup helpers can be imported
+# without AWS (the local demo backend reuses `_lookup` when API keys are set).
+_ddb = None
 
-_ddb = boto3.resource("dynamodb")
-_TABLE_NAME = os.environ["EVENTS_TABLE_NAME"]
+
+def _table() -> Any:
+    global _ddb
+    if _ddb is None:
+        import boto3  # noqa: PLC0415
+
+        _ddb = boto3.resource("dynamodb")
+    return _ddb.Table(os.environ["EVENTS_TABLE_NAME"])
+
+
 _IPINFO_TOKEN = os.environ.get("IPINFO_TOKEN", "").strip()
 _ABUSEIPDB_KEY = os.environ.get("ABUSEIPDB_KEY", "").strip()
 
@@ -72,7 +82,7 @@ def _to_decimal(x: float) -> Decimal:
 
 
 def _update_item(event_id: str, *, geo: dict[str, Any] | None, abuse: dict[str, Any] | None) -> None:
-    table = _ddb.Table(_TABLE_NAME)
+    table = _table()
 
     exprs: list[str] = ["enriched_at = :t"]
     values: dict[str, Any] = {":t": int(time.time())}
@@ -118,12 +128,31 @@ def _update_item(event_id: str, *, geo: dict[str, Any] | None, abuse: dict[str, 
     )
 
 
+# Warm-container cache: one honeypot session produces many events from the same IP,
+# so look each address up once instead of burning API quota per event.
+_LOOKUP_CACHE: dict[str, tuple[dict[str, Any] | None, dict[str, Any] | None]] = {}
+_CACHE_MAX = 5000
+
+
+def _lookup(ip: str) -> tuple[dict[str, Any] | None, dict[str, Any] | None]:
+    hit = _LOOKUP_CACHE.get(ip)
+    if hit is not None:
+        return hit
+    result = (_ipinfo_lookup(ip), _abuseipdb_check(ip))
+    if len(_LOOKUP_CACHE) >= _CACHE_MAX:
+        _LOOKUP_CACHE.clear()
+    _LOOKUP_CACHE[ip] = result
+    return result
+
+
 def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
     processed = 0
     enriched = 0
 
     for rec in event.get("Records", []):
-        if rec.get("eventName") not in ("INSERT", "MODIFY"):
+        # INSERT only: our own update_item (and the cluster job's writes) emit MODIFY
+        # records on the same stream; handling those would re-enrich forever.
+        if rec.get("eventName") != "INSERT":
             continue
         ddb = rec.get("dynamodb") or {}
         new_img = ddb.get("NewImage") or {}
@@ -134,9 +163,14 @@ def lambda_handler(event: dict[str, Any], context: Any) -> dict[str, Any]:
         if not (isinstance(eid, str) and eid and isinstance(src_ip, str) and src_ip):
             continue
 
+        if "enriched_at" in new_img:
+            continue
+
         processed += 1
-        geo = _ipinfo_lookup(src_ip)
-        abuse = _abuseipdb_check(src_ip)
+        geo, abuse = _lookup(src_ip)
+        if geo is None and abuse is None:
+            # No API keys configured (or both lookups failed): nothing to write.
+            continue
         _update_item(eid, geo=geo, abuse=abuse)
         enriched += 1
 

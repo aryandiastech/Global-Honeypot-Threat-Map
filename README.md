@@ -1,66 +1,90 @@
 # Global Honeypot Threat Map
 
-Pinnacle project: decentralized Dockerized honeypots on AWS (Fargate), serverless ingestion (S3 → Lambda → **DynamoDB**), ML clustering for “botnet” grouping and IP reputation, and a React + Mapbox live dashboard.
+Decentralized Dockerized SSH honeypots (Cowrie) on AWS Fargate in two regions, a serverless pipeline
+(S3 → Lambda → **DynamoDB** → enrichment), unsupervised ML that groups attackers into **botnets**, and a
+React 3D globe (MapLibre + OpenFreeMap, or Mapbox when a token is set) showing attacks live.
 
-## Regions (initial)
+> **Presenting without AWS?** Clone, then run `start-demo.bat` (Windows) or `./start-demo.sh`. The whole pipeline
+> runs locally on simulated traffic. **No accounts or API keys needed.** See **[DEMO.md](DEMO.md)**.
+>
+> **Deploying for real?** See **[DEPLOY-AWS.md](DEPLOY-AWS.md)**. It also covers recovering the original AWS account.
 
-- `ap-south-1` (Mumbai)
-- `us-east-1` (N. Virginia)
+## Architecture
 
-Source of truth: `config/deployment-regions.json`.
+```
+ Attackers ──SSH:2222──► Cowrie (Fargate Spot, ap-south-1 + us-east-1)
+                           │ entrypoint.py + log_shipper.py (every 60 s)
+                           ▼
+                     S3 raw-log bucket ──ObjectCreated──► ingest Lambda ──► DynamoDB events
+                                                                               │ stream (INSERT)
+                                                         enrich Lambda ◄───────┘  IPinfo geo + AbuseIPDB score
+                                                         cluster Lambda (every 30 min, DBSCAN) → cluster_id
+                                                                               │
+ React + MapLibre dashboard ◄── poll ── HTTP API  GET /events ◄── read Lambda ◄──┘
+
+ Local demo:  simulator / real cowrie.json ──► demo/server.py (same ingest + clustering code) ──► same GET /events
+```
 
 ## Repository layout
 
 | Path | Purpose |
 |------|---------|
-| `honeypots/cowrie/` | SSH honeypot image (Cowrie), local `docker compose` |
-| `config/` | Shared non-secret config (e.g. region list) |
-| `pipeline/ingest_lambda/` | S3-triggered Lambda: JSONL → DynamoDB |
-| `pipeline/read_api/` | HTTP API Lambda: recent events (`GET /events`) |
-| `infra/sam/` | AWS SAM template for bucket + Lambda + table |
-| `infra/ecs/` | Sample Fargate task definition + notes for Cowrie |
-| `.github/workflows/` | CI: Docker, Python Lambdas/scripts, ML stub, frontend build |
-| `scripts/` | Ops helpers (e.g. upload Cowrie logs to the raw S3 bucket) |
-| `infra/iam/` | Sample ECS task-role policy for S3 uploads |
-| `frontend/` | React + Vite + Mapbox GL dashboard + read API feed (polling) |
-| `ml/` | Offline DBSCAN clustering stub (`cluster_events.py`) |
+| `honeypots/cowrie/` | Cowrie SSH honeypot image (distroless-safe Python entrypoint + S3 log shipper), `docker compose` |
+| `pipeline/ingest_lambda/` | S3-triggered Lambda: Cowrie JSONL → DynamoDB (`normalize_cowrie_record` is shared with the demo) |
+| `pipeline/enrich_lambda/` | DynamoDB Stream consumer: IPinfo geo + AbuseIPDB reputation (INSERT-only, cached per IP) |
+| `pipeline/cluster_lambda/` | Scheduled botnet clustering; `botnet_clustering.py` is the single ML implementation |
+| `pipeline/read_api/` | HTTP API Lambda: `GET /events` |
+| `ml/` | Offline CLI over exported events (`cluster_events.py`) |
+| `demo/` | **Local demo backend** (`server.py`) + attack simulator. No AWS, stdlib only |
+| `frontend/` | React + Vite dashboard: MapLibre globe by default, Mapbox GL when a token is set |
+| `infra/sam/` | SAM template: bucket, table + GSIs, 4 Lambdas, HTTP API |
+| `infra/ecs/` | CloudFormation: ECS cluster, task, security group, Fargate Spot service |
+| `tests/` | Stdlib unit tests (`python -m unittest discover -s tests`) |
+| `wiki/` | 14-page project wiki (methodology, design, evaluation) |
 
-## Project status (what is left)
+## ML: how botnets are found
 
-This is an honest “class demo vs production” snapshot.
+Each attacking IP becomes a behavioural profile, and IPs are compared with a weighted distance:
 
-| Track | In repo now | Typical remaining work |
-|------|-------------|-------------------------|
-| Honeypot | Cowrie Docker + compose + ECS sample task | Multi-region Fargate **services**, steady **log → S3** (sidecar/schedule), hardening |
-| Data plane | SAM: S3 ingest, DynamoDB, timeline GSI, HTTP **GET /events** | `sam deploy` in **each** region, alarms, DLQ, backfills |
-| Dashboard | Map (optional token), events list, **15s polling** | **Arcs** (needs geo-IP), auth, prod hosting URL, WebSockets if you want |
-| ML / intel | **Offline** DBSCAN stub | Richer features, scheduled job, **reputation** + external intel, write-back to Dynamo |
-| Docs / submission | README + folder docs | **14-page GitHub Wiki** + evaluation write-up |
+| Component | Weight | Signal |
+|-----------|--------|--------|
+| Credential dictionary | 0.40 | Jaccard distance between the `user:password` sets tried |
+| Payload commands | 0.25 | Jaccard distance between commands run after login |
+| SSH client | 0.15 | Jaccard distance between client version strings |
+| Behaviour ratios | 0.20 | login / command / success ratios |
 
-**Rough overall:** about **~60–70%** of a strong end-to-end *demo* is in place; the remaining **~30–40%** is mostly **operations** (multi-region fleet, secrets, monitoring), **visual/geo/intel** layers, **ML depth**, and **Wiki/reporting**—not more “empty repo” work.
+DBSCAN (`eps=0.25`, `min_samples=3`, precomputed metric) finds dense groups and leaves one-off scanners as noise.
+On the simulator's ground truth it recovers all 6 botnets with 100% purity and puts all lone scanners in noise,
+stable for `eps` from 0.20 to 0.30 (`tests/test_pipeline.py` checks this). Geography is deliberately not a feature:
+real botnets are spread worldwide, and the map shows that.
 
-## When to create third-party accounts (I will tell you at each step)
+The implementation is pure Python (scikit-learn used if installed), so the Lambda ships without numpy/scipy.
 
-| Secret | Create the account / key **right before** we start this work |
-|--------|------------------------------------------------------------------|
-| **Mapbox access token** | **Frontend milestone** — scaffolding the React app, Mapbox map, and deployment env vars. Until then, not needed. |
-| **IP geolocation API** | **Map / enrichment milestone** — when we add lat/lon per `src_ip` (Lambda or stream after ingest). Ingest to DynamoDB works without it. |
-| **Threat intel / reputation API** | **Reputation / ML milestone** — when we score IPs or blend external intel into clusters. Clustering on log features can start without it. |
+## Project status
 
-Store all secrets in **AWS Secrets Manager** (or SSM Parameter Store) for runtime; never commit them.
+| Track | Status |
+|------|--------|
+| Honeypot | ✅ Cowrie image (fixed for upstream's distroless base), S3 log shipper, Fargate Spot service + SG template |
+| Data plane | ✅ SAM: S3 ingest (batch writes), DynamoDB + timeline GSI, enrich (loop-safe), scheduled clustering, `GET /events` |
+| ML | ✅ Behavioural DBSCAN shared by Lambda, CLI and demo; tactic tagging in UI |
+| Dashboard | ✅ Globe with great-circle arcs, attacker dots + popups, sensors, KPIs, botnet filter, live feed, AWS/demo/snapshot modes |
+| Demo | ✅ Local backend (simulated history + live traffic + real Cowrie tailing), offline snapshot, one-click start scripts |
+| Tests / CI | ✅ Unit tests, Docker build, dashboard build, ML CLI in GitHub Actions |
+| Not done (production hardening) | Auth on the read API, alarms/DLQ, WebSockets instead of polling, NLB to expose port 22 |
 
-## Git workflow (why you might not see a push every message)
+## Secrets
 
-Work lands on **feature branches** and is **pushed after each implemented milestone** (or multi-commit milestone). If a reply is only planning or answering questions, there may be **no new commit** that round. Open PRs on GitHub to review and merge into your main integration branch when ready.
+| Secret | Needed for | Where it goes |
+|--------|-----------|---------------|
+| Mapbox public token *(optional)* | Mapbox globe instead of the free MapLibre one | `frontend/.env` → `VITE_MAPBOX_TOKEN` (git-ignored) |
+| IPinfo token | geo for real traffic on AWS | `sam deploy --parameter-overrides IpinfoToken=…` |
+| AbuseIPDB key | reputation on AWS | `sam deploy --parameter-overrides AbuseIpdbKey=…` |
 
-## Pre-build verification (run on your machine)
+Never commit `.env`. Only `frontend/.env.example` (with empty keys) is tracked.
 
-- `git status` — on a feature branch, clean tree before commits.
-- `gh auth status` — GitHub CLI logged in.
-- `aws sts get-caller-identity` — expected account.
-- Docker Desktop **Engine running**, then `docker version` (client **and** server).
-- From `honeypots/cowrie/`: `docker compose up --build`.
+## Tests
 
-## Honeypot quick start
-
-See `honeypots/cowrie/README.md`.
+```bash
+python -m unittest discover -s tests -v
+cd frontend && npm run build
+```

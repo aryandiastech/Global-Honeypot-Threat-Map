@@ -2,6 +2,8 @@
 
 This document encapsulates the standard operating procedures to boot the infrastructure.
 
+> Full copy-paste commands (ECR push, default-VPC lookup, Fargate service) are in [`DEPLOY-AWS.md`](../../DEPLOY-AWS.md). To run everything locally without AWS, see [`DEMO.md`](../../DEMO.md).
+
 ## Prerequisites
 - AWS CLI configured locally (`aws configure`).
 - AWS SAM CLI installed.
@@ -11,7 +13,7 @@ This document encapsulates the standard operating procedures to boot the infrast
 The DynamoDB tables, S3 Buckets, HTTP API, and all AWS Lambda scripts rely on the SAM `template.yaml`.
 ```bash
 cd infra/sam
-sam build --use-container
+sam build
 sam deploy --guided --parameter-overrides Stage=prod IpinfoToken="<YOUR_TOKEN>" AbuseIpdbKey="<YOUR_KEY>"
 ```
 *Note the returned SAM Outputs (specifically the `RawLogBucketName` and `HttpApiUrl`).*
@@ -28,13 +30,15 @@ docker build -t ghtm-cowrie:latest .
 Use the included CloudFormation template to spin up the actual decoy nodes.
 ```bash
 cd infra/ecs
-aws cloudformation deploy --template-file fargate-deploy.yaml --stack-name GHTM-Fargate-Prod --parameter-overrides ImageUrl="<YOUR_ECR_URI>" RawLogBucketName="<SAM_BUCKET_NAME>" Stage=prod
+aws cloudformation deploy --template-file fargate-deploy.yaml --stack-name GHTM-Fargate-Prod --capabilities CAPABILITY_IAM \
+  --parameter-overrides ImageUrl="<YOUR_ECR_URI>" RawLogBucketName="<SAM_BUCKET_NAME>" Stage=prod \
+  VpcId="<VPC_ID>" SubnetIds="<SUBNET_1>,<SUBNET_2>"
 ```
 
 ## Step 4: Launch React UI
 ```bash
 cd frontend
-# Populate .env with API URL and Mapbox token
+# Set VITE_API_URL in .env (Mapbox token optional — MapLibre is used without one)
 npm install
 npm run dev
 ```

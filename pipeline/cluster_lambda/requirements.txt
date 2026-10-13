@@ -1,3 +1,3 @@
-scikit-learn==1.4.1.post1
-numpy==1.26.4
-boto3==1.34.69
+# boto3 is provided in the AWS Lambda Python 3.12 runtime; listed for local editors only.
+# Clustering is pure Python (scikit-learn is optional and only used offline when installed).
+boto3>=1.34.0,<2

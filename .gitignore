@@ -22,3 +22,7 @@ cdk.out/
 .terraform/
 *.tfstate
 *.tfstate.*
+
+# Local Cowrie output (docker compose bind mount)
+honeypots/cowrie/logs/*
+!honeypots/cowrie/logs/.gitkeep

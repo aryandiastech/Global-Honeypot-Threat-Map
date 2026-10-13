@@ -6,4 +6,12 @@ export default defineConfig({
   server: {
     port: 5173,
   },
+  // The map libraries are large single chunks, loaded lazily (only the one in use).
+  build: {
+    chunkSizeWarningLimit: 2000,
+  },
+  // MapLibre's worker is an ES module (it imports a shared chunk).
+  worker: {
+    format: "es",
+  },
 });

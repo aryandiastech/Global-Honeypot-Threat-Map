@@ -26,4 +26,4 @@ python scripts/cowrie_log_to_s3.py --bucket YOUR_BUCKET --key manual/test.jsonl 
 
 Attach an IAM **task role** that allows `s3:PutObject` on `arn:aws:s3:::YOUR_RAW_BUCKET/*` (see `infra/iam/`). Run this script on a schedule (`cron` in a sidecar, **EventBridge** + small task, or **ECS Exec** while debugging).
 
-Cowrie’s default JSON log path inside the official image is typically under `/cowrie/cowrie-git/var/log/cowrie/` (exact filename may vary by image version).
+Cowrie’s JSON log path inside the image is `/cowrie/cowrie-git/var/log/cowrie/cowrie.json`. On Fargate the built-in `log_shipper.py` (started by `honeypots/cowrie/entrypoint.py` when `S3_RAW_LOG_BUCKET` is set) already uploads it every 60 s. This script is for manual backfills.
