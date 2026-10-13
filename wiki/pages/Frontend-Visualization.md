@@ -23,3 +23,8 @@ The crowning feature of the dashboard is its ML Integration. When events arrive,
 - Random noise (isolated scanners) default to a low-opacity blue line (`cluster_id: -1`).
 - Verified grouped Botnets (e.g., `BOTNET-1`, `BOTNET-2`) will glow brightly in distinct neon colors on the map.
 - The Side Panel also displays this ID badge next to Cowrie's internal Session ID, allowing Threat Researchers to instantly group IPs by visual correlation!
+
+## Map engines
+The globe runs on **MapLibre GL** with the free **OpenFreeMap** dark style by default, so the project needs no
+API key to present. If `VITE_MAPBOX_TOKEN` is set, the same component switches to **Mapbox GL**
+(`dark-v11` + fog). Both libraries share the layer/source API used here, and only the one in use is downloaded.

@@ -105,44 +105,19 @@ export default function App() {
 
       <main className="main">
         <section className="mapPanel">
-          {token ? (
-            <ThreatMap token={token} events={events} clusters={clusters} focusCluster={focusCluster} onArcCount={onArcCount} />
-          ) : (
-            <div className="placeholder">
-              <div className="placeholderTitle">🗺️ Add your Mapbox token to see the 3D globe</div>
-              <ol className="steps">
-                <li>
-                  Create a free account at <a href="https://account.mapbox.com/auth/signup/" target="_blank" rel="noreferrer">mapbox.com</a>{" "}
-                  (no card needed for the free tier).
-                </li>
-                <li>
-                  Copy the <b>Default public token</b> (starts with <code>pk.</code>) from{" "}
-                  <a href="https://account.mapbox.com/access-tokens/" target="_blank" rel="noreferrer">Access tokens</a>.
-                </li>
-                <li>
-                  Paste it into <code>frontend/.env</code> → <code>VITE_MAPBOX_TOKEN=pk....</code>
-                </li>
-                <li>
-                  Restart <code>npm run dev</code> (or <code>start-demo</code>).
-                </li>
-              </ol>
-              <p className="muted small">Everything else on this page already works without the token.</p>
+          <ThreatMap token={token} events={events} clusters={clusters} focusCluster={focusCluster} onArcCount={onArcCount} />
+          <div className="legend">
+            <div>
+              <span className="swatch sensor" /> Honeypot sensor
             </div>
-          )}
-          {token ? (
-            <div className="legend">
-              <div>
-                <span className="swatch sensor" /> Honeypot sensor
-              </div>
-              <div>
-                <span className="swatch" style={{ background: clusterColor(-1) }} /> Lone scanner
-              </div>
-              <div>
-                <span className="swatch" style={{ background: clusterColor(0) }} /> Botnet (colour = cluster)
-              </div>
-              <div className="muted small">{arcs} attack arcs · bright = last 90s · click a dot</div>
+            <div>
+              <span className="swatch" style={{ background: clusterColor(-1) }} /> Lone scanner
             </div>
-          ) : null}
+            <div>
+              <span className="swatch" style={{ background: clusterColor(0) }} /> Botnet (colour = cluster)
+            </div>
+            <div className="muted small">{arcs} attack arcs · bright = last 90s · click a dot</div>
+          </div>
         </section>
 
         <aside className="side">
@@ -255,8 +230,8 @@ export default function App() {
               <span className="muted small mono ellipsis">{apiBase ?? "VITE_API_URL not set"}</span>
             </div>
             <div className="kv">
-              <span>Mapbox</span>
-              <span className="muted small">{token ? "token loaded" : "VITE_MAPBOX_TOKEN missing"}</span>
+              <span>Map</span>
+              <span className="muted small">{token ? "Mapbox (token set)" : "MapLibre + OpenFreeMap (no key)"}</span>
             </div>
           </div>
         </aside>

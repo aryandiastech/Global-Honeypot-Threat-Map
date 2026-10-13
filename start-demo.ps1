@@ -17,10 +17,7 @@ Need "npm" "Install Node.js LTS from https://nodejs.org/"
 
 if (-not (Test-Path "frontend/.env")) {
   Copy-Item "frontend/.env.example" "frontend/.env"
-  Write-Host "Created frontend/.env - paste your Mapbox token into VITE_MAPBOX_TOKEN for the 3D globe." -ForegroundColor Yellow
-}
-if (-not (Select-String -Path "frontend/.env" -Pattern "^VITE_MAPBOX_TOKEN=pk\." -Quiet)) {
-  Write-Host "Note: VITE_MAPBOX_TOKEN is empty - the dashboard works, but the globe needs the token (see DEMO.md)." -ForegroundColor Yellow
+  Write-Host "Created frontend/.env (no keys needed)." -ForegroundColor Green
 }
 if (-not (Test-Path "frontend/node_modules")) {
   Write-Host "Installing dashboard dependencies (first run only)..."

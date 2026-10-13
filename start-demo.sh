@@ -7,8 +7,7 @@ cd "$(dirname "$0")"
 PY=$(command -v python3 || command -v python || true)
 [ -n "$PY" ] || { echo "Missing Python 3.10+ (https://www.python.org/downloads/)"; exit 1; }
 command -v npm >/dev/null || { echo "Missing Node.js LTS (https://nodejs.org/)"; exit 1; }
-[ -f frontend/.env ] || { cp frontend/.env.example frontend/.env; echo "Created frontend/.env - add your Mapbox token (see DEMO.md)."; }
-grep -q '^VITE_MAPBOX_TOKEN=pk\.' frontend/.env || echo "Note: VITE_MAPBOX_TOKEN is empty - the globe needs it (see DEMO.md)."
+[ -f frontend/.env ] || { cp frontend/.env.example frontend/.env; echo "Created frontend/.env (no keys needed)."; }
 [ -d frontend/node_modules ] || npm --prefix frontend install
 
 EXTRA=""

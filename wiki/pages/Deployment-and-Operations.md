@@ -38,7 +38,7 @@ aws cloudformation deploy --template-file fargate-deploy.yaml --stack-name GHTM-
 ## Step 4: Launch React UI
 ```bash
 cd frontend
-# Populate .env with API URL and Mapbox token
+# Set VITE_API_URL in .env (Mapbox token optional — MapLibre is used without one)
 npm install
 npm run dev
 ```

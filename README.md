@@ -2,10 +2,10 @@
 
 Decentralized Dockerized SSH honeypots (Cowrie) on AWS Fargate in two regions, a serverless pipeline
 (S3 → Lambda → **DynamoDB** → enrichment), unsupervised ML that groups attackers into **botnets**, and a
-React + Mapbox 3D globe showing attacks live.
+React 3D globe (MapLibre + OpenFreeMap, or Mapbox when a token is set) showing attacks live.
 
-> **Presenting without AWS?** Run `start-demo.bat` (Windows) or `./start-demo.sh`. The whole pipeline runs
-> locally on simulated traffic. The only key needed is a free Mapbox token. See **[DEMO.md](DEMO.md)**.
+> **Presenting without AWS?** Clone, then run `start-demo.bat` (Windows) or `./start-demo.sh`. The whole pipeline
+> runs locally on simulated traffic. **No accounts or API keys needed.** See **[DEMO.md](DEMO.md)**.
 >
 > **Deploying for real?** See **[DEPLOY-AWS.md](DEPLOY-AWS.md)**. It also covers recovering the original AWS account.
 
@@ -20,7 +20,7 @@ React + Mapbox 3D globe showing attacks live.
                                                          enrich Lambda ◄───────┘  IPinfo geo + AbuseIPDB score
                                                          cluster Lambda (every 30 min, DBSCAN) → cluster_id
                                                                                │
- React + Mapbox dashboard ◄── poll ── HTTP API  GET /events ◄── read Lambda ◄──┘
+ React + MapLibre dashboard ◄── poll ── HTTP API  GET /events ◄── read Lambda ◄──┘
 
  Local demo:  simulator / real cowrie.json ──► demo/server.py (same ingest + clustering code) ──► same GET /events
 ```
@@ -36,7 +36,7 @@ React + Mapbox 3D globe showing attacks live.
 | `pipeline/read_api/` | HTTP API Lambda: `GET /events` |
 | `ml/` | Offline CLI over exported events (`cluster_events.py`) |
 | `demo/` | **Local demo backend** (`server.py`) + attack simulator. No AWS, stdlib only |
-| `frontend/` | React + Vite + Mapbox GL dashboard |
+| `frontend/` | React + Vite dashboard: MapLibre globe by default, Mapbox GL when a token is set |
 | `infra/sam/` | SAM template: bucket, table + GSIs, 4 Lambdas, HTTP API |
 | `infra/ecs/` | CloudFormation: ECS cluster, task, security group, Fargate Spot service |
 | `tests/` | Stdlib unit tests (`python -m unittest discover -s tests`) |
@@ -76,7 +76,7 @@ The implementation is pure Python (scikit-learn used if installed), so the Lambd
 
 | Secret | Needed for | Where it goes |
 |--------|-----------|---------------|
-| **Mapbox public token** | the globe (demo and AWS) | `frontend/.env` → `VITE_MAPBOX_TOKEN` (git-ignored) |
+| Mapbox public token *(optional)* | Mapbox globe instead of the free MapLibre one | `frontend/.env` → `VITE_MAPBOX_TOKEN` (git-ignored) |
 | IPinfo token | geo for real traffic on AWS | `sam deploy --parameter-overrides IpinfoToken=…` |
 | AbuseIPDB key | reputation on AWS | `sam deploy --parameter-overrides AbuseIpdbKey=…` |
 
