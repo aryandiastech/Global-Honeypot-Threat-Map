@@ -1,5 +1,5 @@
 # One-click local demo (Windows PowerShell). No AWS account needed.
-#   - starts the demo backend (simulated honeypot traffic, live) on http://localhost:8000
+#   - starts the demo backend on http://localhost:8000 (press Start in the dashboard for live attacks)
 #   - starts the React dashboard on http://localhost:5173 and opens it
 # Usage:  right-click > Run with PowerShell   or   powershell -ExecutionPolicy Bypass -File .\start-demo.ps1
 # Optional: .\start-demo.ps1 -WithCowrie   (also tails a real Cowrie honeypot started with docker compose)
@@ -24,7 +24,7 @@ if (-not (Test-Path "frontend/node_modules")) {
   npm --prefix frontend install
 }
 
-$backendArgs = @("demo/server.py", "--live")
+$backendArgs = @("demo/server.py")
 if ($WithCowrie) { $backendArgs += @("--cowrie-log", "honeypots/cowrie/logs/cowrie.json") }
 $backend = Start-Process -FilePath $py -ArgumentList $backendArgs -PassThru -NoNewWindow
 Start-Sleep -Seconds 2

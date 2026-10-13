@@ -1,4 +1,4 @@
-import type { ClusterSummary, RemoteEvent, Stats } from "./types";
+import type { AttackSession, ClusterSummary, RemoteEvent, Stats } from "./types";
 
 const PALETTE = ["#ff595e", "#ffca3a", "#8ac926", "#1982c4", "#c77dff", "#f15bb5", "#00bbf9", "#ff924c"];
 export const NOISE_COLOR = "#5b8def";
@@ -122,4 +122,56 @@ export function computeStats(events: RemoteEvent[]): Stats {
     events_by_sensor: top(sensors, 10),
     clusters: clusterList,
   };
+}
+
+const eventTime = (e: RemoteEvent) => e.sensor_timestamp ?? e.received_at ?? "";
+
+/**
+ * Group raw events into attack sessions, newest first. Cowrie tags every event with a
+ * session id; rows without one fall back to (ip, minute).
+ */
+export function groupSessions(events: RemoteEvent[]): AttackSession[] {
+  const byKey = new Map<string, RemoteEvent[]>();
+  for (const e of events) {
+    if (!e.src_ip) continue;
+    const key = `${e.src_ip}|${e.session ?? (e.received_at ?? "").slice(0, 16)}`;
+    const list = byKey.get(key);
+    if (list) list.push(e);
+    else byKey.set(key, [e]);
+  }
+  const sessions: AttackSession[] = [];
+  for (const [key, list] of byKey) {
+    const ordered = [...list].sort((a, b) => eventTime(a).localeCompare(eventTime(b)));
+    const success = ordered.find((e) => e.cowrie_eventid === "cowrie.login.success");
+    const head = ordered.find((e) => typeof e.geo_lat === "number") ?? ordered[0];
+    const latest = list.reduce((m, e) => ((e.received_at ?? "") > (m.received_at ?? "") ? e : m), list[0]);
+    sessions.push({
+      key,
+      session: head.session,
+      src_ip: head.src_ip!,
+      start: ordered[0].received_at ?? "",
+      end: latest.received_at ?? "",
+      aws_region: head.aws_region,
+      sensor: head.sensor,
+      client: ordered.find((e) => e.client_version)?.client_version,
+      failed: ordered.filter((e) => e.cowrie_eventid === "cowrie.login.failed").length,
+      success: Boolean(success),
+      credential: success ? `${success.username ?? ""} / ${success.password ?? ""}` : undefined,
+      commands: ordered.filter((e) => e.command).map((e) => e.command!),
+      downloads: ordered.filter((e) => e.cowrie_eventid === "cowrie.session.file_download").length,
+      cluster_id: latest.cluster_id,
+      head,
+      events: ordered,
+    });
+  }
+  return sessions.sort((a, b) => b.end.localeCompare(a.end) || b.start.localeCompare(a.start));
+}
+
+export function summarizeSession(s: AttackSession): string {
+  const parts: string[] = [];
+  if (s.failed) parts.push(`${s.failed} failed login${s.failed > 1 ? "s" : ""}`);
+  if (s.success) parts.push(`cracked ${s.credential}`);
+  if (s.commands.length) parts.push(`${s.commands.length} command${s.commands.length > 1 ? "s" : ""}`);
+  if (s.downloads) parts.push("payload download");
+  return parts.join(" · ") || "port scan / banner grab";
 }

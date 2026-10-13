@@ -1,6 +1,6 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { computeStats } from "./analytics";
-import type { FeedSource, RemoteEvent, Stats } from "./types";
+import type { FeedSource, RemoteEvent, SimulationStatus, Stats } from "./types";
 
 type Feed = {
   events: RemoteEvent[];
@@ -9,6 +9,8 @@ type Feed = {
   loading: boolean;
   error: string | null;
   lastUpdated: string | null;
+  /** live attack simulation status; null when the backend has none (AWS, snapshot) */
+  simulation: SimulationStatus | null;
 };
 
 const SNAPSHOT_URL = `${import.meta.env.BASE_URL}demo-snapshot.json`;
@@ -27,7 +29,11 @@ function rebaseTimestamps(items: RemoteEvent[]): RemoteEvent[] {
  * does, the AWS read API does not). With no API URL configured it falls back
  * to the bundled static snapshot so the UI never renders empty.
  */
-export function useThreatFeed(apiBase: string | undefined, pollMs: number, limit: number): Feed {
+export function useThreatFeed(
+  apiBase: string | undefined,
+  pollMs: number,
+  limit: number,
+): Feed & { refresh: () => void } {
   const [feed, setFeed] = useState<Feed>({
     events: [],
     stats: null,
@@ -35,7 +41,11 @@ export function useThreatFeed(apiBase: string | undefined, pollMs: number, limit
     loading: true,
     error: null,
     lastUpdated: null,
+    simulation: null,
   });
+  // Bumped by refresh() to reload immediately (e.g. right after Start/Stop).
+  const [nonce, setNonce] = useState(0);
+  const refresh = useCallback(() => setNonce((n) => n + 1), []);
 
   useEffect(() => {
     let active = true;
@@ -53,6 +63,7 @@ export function useThreatFeed(apiBase: string | undefined, pollMs: number, limit
             loading: false,
             error: null,
             lastUpdated: new Date().toLocaleTimeString(),
+            simulation: null,
           });
         })
         .catch((err: unknown) => {
@@ -70,7 +81,7 @@ export function useThreatFeed(apiBase: string | undefined, pollMs: number, limit
       try {
         const res = await fetch(`${apiBase}/events?limit=${limit}`);
         if (!res.ok) throw new Error((await res.text()) || `HTTP ${res.status}`);
-        const data = (await res.json()) as { items?: RemoteEvent[]; source?: string };
+        const data = (await res.json()) as { items?: RemoteEvent[]; source?: string; simulation?: SimulationStatus };
         const items = Array.isArray(data.items) ? data.items : [];
 
         let stats: Stats | null = null;
@@ -92,6 +103,7 @@ export function useThreatFeed(apiBase: string | undefined, pollMs: number, limit
           loading: false,
           error: null,
           lastUpdated: new Date().toLocaleTimeString(),
+          simulation: data.simulation ?? null,
         });
       } catch (err: unknown) {
         if (!active) return;
@@ -109,7 +121,7 @@ export function useThreatFeed(apiBase: string | undefined, pollMs: number, limit
       active = false;
       window.clearInterval(id);
     };
-  }, [apiBase, pollMs, limit]);
+  }, [apiBase, pollMs, limit, nonce]);
 
-  return feed;
+  return { ...feed, refresh };
 }

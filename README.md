@@ -68,7 +68,7 @@ The implementation is pure Python (scikit-learn used if installed), so the Lambd
 | Data plane | ✅ SAM: S3 ingest (batch writes), DynamoDB + timeline GSI, enrich (loop-safe), scheduled clustering, `GET /events` |
 | ML | ✅ Behavioural DBSCAN shared by Lambda, CLI and demo; tactic tagging in UI |
 | Dashboard | ✅ Globe with great-circle arcs, attacker dots + popups, sensors, KPIs, botnet filter, live feed, AWS/demo/snapshot modes |
-| Demo | ✅ Local backend (simulated history + live traffic + real Cowrie tailing), offline snapshot, one-click start scripts |
+| Demo | ✅ Local backend (simulated history, Start/Stop live attacks every 4–9 s, real Cowrie tailing), attack detail panel, offline snapshot, one-click start scripts |
 | Tests / CI | ✅ Unit tests, Docker build, dashboard build, ML CLI in GitHub Actions |
 | Not done (production hardening) | Auth on the read API, alarms/DLQ, WebSockets instead of polling, NLB to expose port 22 |
 

@@ -14,7 +14,8 @@ const MAX_ARCS = 400;
 
 /** Free, key-less dark basemap (https://openfreemap.org) used when no Mapbox token is set. */
 const FREE_STYLE_URL = "https://tiles.openfreemap.org/styles/dark";
-const VIEW = { center: [45, 25] as [number, number], zoom: 1.45, pitch: 30, bearing: -10 };
+// Centred over the Atlantic/Africa so both sensors (Mumbai and N. Virginia) are on screen at once.
+const VIEW = { center: [-8, 24] as [number, number], zoom: 1.45, pitch: 0, bearing: 0 };
 
 export type MapEngine = "mapbox" | "maplibre";
 
@@ -93,7 +94,6 @@ function greatCircle([lon1, lat1]: LonLat, [lon2, lat2]: LonLat, steps = 48): Lo
 /** Popup HTML is built from enrichment data (third-party geo/org strings) — escape it. */
 const esc = (v: unknown) =>
   String(v ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!);
-const safeColor = (v: unknown) => (/^#[0-9a-f]{6}$/i.test(String(v)) ? String(v) : "#8b9bb8");
 
 const regionOf = (e: RemoteEvent) => (e.aws_region && REGION_NODES[e.aws_region] ? e.aws_region : DEFAULT_REGION);
 
@@ -104,11 +104,17 @@ type Props = {
   clusters: ClusterSummary[];
   focusCluster: number | null;
   onArcCount: (n: number) => void;
+  /** attacker whose details are open (gets a highlight ring) */
+  selectedIp?: string | null;
+  onSelect?: (ip: string) => void;
 };
 
-export default function ThreatMap({ token, events, clusters, focusCluster, onArcCount }: Props) {
+export default function ThreatMap({ token, events, clusters, focusCluster, onArcCount, selectedIp, onSelect }: Props) {
   const mapEl = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<GLMap | null>(null);
+  // Map event handlers are registered once; read the latest callback through a ref.
+  const onSelectRef = useRef(onSelect);
+  onSelectRef.current = onSelect;
   const [ready, setReady] = useState(false);
   const [mapError, setMapError] = useState<string | null>(null);
 
@@ -137,6 +143,7 @@ export default function ThreatMap({ token, events, clusters, focusCluster, onArc
           const empty = { type: "FeatureCollection" as const, features: [] };
           m.addSource("arcs", { type: "geojson", data: empty });
           m.addSource("attackers", { type: "geojson", data: empty });
+          m.addSource("selected", { type: "geojson", data: empty });
           m.addSource("sensors", {
             type: "geojson",
             data: {
@@ -158,6 +165,20 @@ export default function ThreatMap({ token, events, clusters, focusCluster, onArc
               "line-color": ["get", "color"],
               "line-width": ["case", ["get", "fresh"], 2.6, 1.1],
               "line-opacity": ["case", ["get", "dim"], 0.06, ["get", "fresh"], 0.95, 0.45],
+            },
+          });
+          // Expanding ring on attackers seen in the last 90 s ("an attack is happening").
+          m.addLayer({
+            id: "attacker-ping",
+            type: "circle",
+            source: "attackers",
+            filter: ["==", ["get", "fresh"], true],
+            paint: {
+              "circle-color": "rgba(0,0,0,0)",
+              "circle-radius": 8,
+              "circle-stroke-color": ["get", "color"],
+              "circle-stroke-width": 2,
+              "circle-stroke-opacity": 0.8,
             },
           });
           m.addLayer({
@@ -184,20 +205,24 @@ export default function ThreatMap({ token, events, clusters, focusCluster, onArc
             source: "sensors",
             paint: { "circle-color": "#38f2c4", "circle-radius": 6, "circle-stroke-color": "#eafff8", "circle-stroke-width": 2 },
           });
+          m.addLayer({
+            id: "selected-ring",
+            type: "circle",
+            source: "selected",
+            paint: {
+              "circle-color": "rgba(0,0,0,0)",
+              "circle-radius": 13,
+              "circle-stroke-color": "#ffffff",
+              "circle-stroke-width": 2.5,
+            },
+          });
 
           const popup = (html: string, at: LngLatLike) =>
             new Popup({ closeButton: false, className: "threatPopup", maxWidth: "280px" }).setLngLat(at).setHTML(html).addTo(m);
 
           m.on("click", "attackers", (ev: MapLayerMouseEvent) => {
             const p = ev.features?.[0]?.properties as Record<string, string> | undefined;
-            if (!p) return;
-            popup(
-              `<div class="pTitle"><span class="cc">${esc(p.flag)}</span> ${esc(p.ip)}</div>
-               <div>${esc(p.place)}</div><div class="pMuted">${esc(p.org)}</div>
-               <div>Abuse score: <b>${esc(p.abuse)}</b>/100 · ${esc(p.events)} events</div>
-               <div style="color:${safeColor(p.color)}">${esc(p.botnet)}</div>`,
-              ev.lngLat,
-            );
+            if (p?.ip) onSelectRef.current?.(p.ip);
           });
           m.on("click", "sensors", (ev: MapLayerMouseEvent) => {
             const p = ev.features?.[0]?.properties as Record<string, string> | undefined;
@@ -219,6 +244,11 @@ export default function ThreatMap({ token, events, clusters, focusCluster, onArc
             const k = (Math.sin(t / 450) + 1) / 2;
             m.setPaintProperty("sensor-halo", "circle-radius", 10 + 10 * k);
             m.setPaintProperty("sensor-halo", "circle-opacity", 0.28 - 0.18 * k);
+          }
+          if (m.getLayer("attacker-ping")) {
+            const k = (t % 1600) / 1600; // 0 → 1, repeating
+            m.setPaintProperty("attacker-ping", "circle-radius", 6 + 22 * k);
+            m.setPaintProperty("attacker-ping", "circle-stroke-opacity", 0.9 * (1 - k));
           }
           raf = requestAnimationFrame(pulse);
         };
@@ -276,6 +306,7 @@ export default function ThreatMap({ token, events, clusters, focusCluster, onArc
       type: "Feature" as const,
       properties: {
         ip: e.src_ip,
+        fresh: now - (Date.parse(e.received_at ?? "") || 0) < FRESH_MS,
         color: clusterColor(e.cluster_id),
         abuse: Number(e.abuse_score ?? 0),
         dim: dimmed(e),
@@ -294,6 +325,19 @@ export default function ThreatMap({ token, events, clusters, focusCluster, onArc
     (map.getSource("attackers") as GeoJSONSource).setData({ type: "FeatureCollection", features: attackerFeatures });
     onArcCount(arcFeatures.length);
   }, [events, clusters, focusCluster, ready, onArcCount]);
+
+  // --- highlight + fly to the selected attacker. `events` is deliberately not a dependency:
+  // the camera should move when the selection changes, not on every poll.
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!map || !ready) return;
+    const e = selectedIp ? events.find((x) => x.src_ip === selectedIp && typeof x.geo_lat === "number") : undefined;
+    const features = e
+      ? [{ type: "Feature" as const, properties: {}, geometry: { type: "Point" as const, coordinates: [Number(e.geo_lon), Number(e.geo_lat)] } }]
+      : [];
+    (map.getSource("selected") as GeoJSONSource).setData({ type: "FeatureCollection", features });
+    if (e) map.easeTo({ center: [Number(e.geo_lon), Number(e.geo_lat)], duration: 1200 });
+  }, [selectedIp, ready]);
 
   return (
     <>
