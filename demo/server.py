@@ -9,8 +9,11 @@ It mirrors the AWS pipeline step by step, reusing the same code:
                    ──► botnet clustering         (pipeline/cluster_lambda)  ≈ scheduled Lambda
                    ──► GET /events               (same JSON contract as pipeline/read_api)
 
+The store starts EMPTY by default — like honeypots that were just deployed — and fills
+up as attacks arrive.
+
 Event sources (combine freely):
-  * simulated history  — 24h of synthetic attacks from six botnets + lone scanners (default)
+  * --hours N          — pre-fill N hours of synthetic history (six botnets + lone scanners)
   * live simulation    — one new attack every 4–9 s on a random sensor, switched on/off from the
                          dashboard's Start button (or at launch with --live)
   * --cowrie-log PATH  — tail a real Cowrie cowrie.json (docker compose in honeypots/cowrie)
@@ -454,7 +457,9 @@ def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--host", default="127.0.0.1")
     ap.add_argument("--port", type=int, default=8000)
-    ap.add_argument("--hours", type=int, default=24, help="Hours of simulated history to backfill (0 = none).")
+    ap.add_argument("--hours", type=int, default=None,
+                    help="Hours of simulated history to pre-fill. Default 0 (start empty, like freshly deployed "
+                         "honeypots); --export-snapshot defaults to 24.")
     ap.add_argument("--seed", type=int, default=1337, help="Random seed for reproducible demo data.")
     ap.add_argument("--live", action="store_true",
                     help="Start the live attack simulation immediately (otherwise use the dashboard's Start button).")
@@ -470,6 +475,8 @@ def main() -> int:
                     help="Write a static JSON snapshot (for the frontend's offline mode) and exit.")
     ap.add_argument("--snapshot-limit", type=int, default=500)
     args = ap.parse_args()
+    if args.hours is None:
+        args.hours = 24 if args.export_snapshot else 0
 
     lat_s, lon_s = args.lab_latlon.split(",", 1)
     sim = AttackSimulator(seed=args.seed)
@@ -480,8 +487,11 @@ def main() -> int:
     if args.hours > 0:
         n = store.ingest(sim.history(hours=args.hours), source="history-sim", use_event_time=True)
         print(f"[demo] backfilled {n} simulated events over {args.hours}h")
+    else:
+        print("[demo] starting with an empty database (freshly deployed honeypots)")
     store.recluster()
-    print(f"[demo] {len(store.clusters)} botnet clusters found ({store.cluster_engine} DBSCAN)")
+    if store.clusters:
+        print(f"[demo] {len(store.clusters)} botnet clusters found ({store.cluster_engine} DBSCAN)")
 
     if args.export_snapshot:
         export_snapshot(store, args.export_snapshot, args.snapshot_limit)

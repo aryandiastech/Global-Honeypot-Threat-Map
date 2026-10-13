@@ -14,7 +14,8 @@ const MAX_ARCS = 400;
 
 /** Free, key-less dark basemap (https://openfreemap.org) used when no Mapbox token is set. */
 const FREE_STYLE_URL = "https://tiles.openfreemap.org/styles/dark";
-const VIEW = { center: [45, 25] as [number, number], zoom: 1.45, pitch: 30, bearing: -10 };
+// Centred over the Atlantic/Africa so both sensors (Mumbai and N. Virginia) are on screen at once.
+const VIEW = { center: [-8, 24] as [number, number], zoom: 1.45, pitch: 0, bearing: 0 };
 
 export type MapEngine = "mapbox" | "maplibre";
 

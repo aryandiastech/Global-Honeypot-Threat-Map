@@ -69,6 +69,9 @@ npm run dev
 
 ## 4. What you'll see
 
+- **Fresh deployment**: the dashboard starts **empty** (0 events, 0 attackers, 0 botnets), as if the honeypots were
+  just deployed. Everything you see afterwards was captured after you pressed Start. To open with 24 h of
+  pre-recorded history instead, start the backend with `python demo/server.py --hours 24`.
 - **▶ Start attack simulation** (top right): starts live traffic. Every **4–9 seconds** a new attack hits one of
   the two honeypot sensors. A red pop-up announces it, a pulsing ring marks the attacker on the globe, and the attack
   is stored in the **attack database** on the right. Press **■ Stop simulation** to pause it. The button shows the
@@ -116,7 +119,9 @@ Within ~2 s your login attempts and commands appear in the feed. Private/LAN IPs
 
 1. **Problem** (30 s): internet-facing SSH is attacked within minutes, but raw logs don't show *who is coordinated*.
 2. **Architecture** (1 min): Cowrie on Fargate in 2 regions → S3 → ingest Lambda → DynamoDB → enrich Lambda (IPinfo + AbuseIPDB) → scheduled DBSCAN Lambda → HTTP API → React + Mapbox. Show `wiki/pages/System-Architecture.md`.
-3. **Live dashboard** (2 min): press **▶ Start attack simulation** and let a few attacks land. Click a pop-up to open
+3. **Live dashboard** (2 min): "the honeypots have just been deployed", so everything reads 0. Press **▶ Start attack
+   simulation** and let attacks land. After about 6–8 attacks (under a minute) the ML flags its first botnet, and a few
+   minutes in there are 3–6. Click a pop-up to open
    the attack's details and walk through its session timeline and stored record. Then click a botnet (e.g. *Malware
    dropper*): its IPs span several countries but run the same `wget … && ./x.sh` payload. That's the ML insight.
    Press **■ Stop** when done.
@@ -128,7 +133,7 @@ Within ~2 s your login attempts and commands appear in the feed. Private/LAN IPs
 - Simulated attackers use only **reserved documentation IP ranges** (RFC 5737 `192.0.2.0/24`, `198.51.100.0/24`,
   `203.0.113.0/24` and RFC 2544 `198.18.0.0/15`), so no real person's IP is ever shown as an attacker.
   Locations, networks and abuse scores are synthetic and marked "(simulated)".
-- Data is reproducible (`--seed 1337`). Change the seed for a different dataset, or set `--hours` for the backfill length.
+- Data is reproducible (`--seed 1337`). Change the seed for a different dataset. `--hours N` pre-fills N hours of history (default 0 = empty start).
 - Optional real enrichment for real Cowrie traffic: set `IPINFO_TOKEN` / `ABUSEIPDB_KEY` environment variables before
   starting the backend, and it reuses the enrich Lambda's lookup code.
 

@@ -145,11 +145,11 @@ export default function App() {
     [sessions, focusCluster],
   );
 
-  // Toast for every attack session that appears after the first load.
+  // Toast for every attack session that appears after the first load (which may be empty).
   const seen = useRef<Set<string> | null>(null);
   useEffect(() => {
-    if (sessions.length === 0) return;
     if (seen.current === null) {
+      if (!feed.lastUpdated) return; // first load not done yet
       seen.current = new Set(sessions.map((s) => s.key));
       return;
     }
@@ -159,7 +159,7 @@ export default function App() {
     const added = fresh.slice(0, 3).map((s) => ({ id: `${s.key}-${Date.now()}`, session: s }));
     setToasts((t) => [...added, ...t].slice(0, 4));
     for (const t of added) window.setTimeout(() => setToasts((all) => all.filter((x) => x.id !== t.id)), TOAST_MS);
-  }, [sessions]);
+  }, [sessions, feed.lastUpdated]);
 
   const kpis: [string, string | number][] = stats
     ? [
@@ -278,7 +278,13 @@ export default function App() {
             {feed.loading ? (
               <p className="muted small">Loading…</p>
             ) : logRows.length === 0 ? (
-              <p className="muted small">No attacks stored yet.</p>
+              <p className="muted small">
+                {source === "local-demo" && !sim?.running
+                  ? "No attacks yet — the honeypots are freshly deployed. Press ▶ Start attack simulation."
+                  : focusCluster !== null
+                    ? "No stored attacks from this botnet yet."
+                    : "No attacks stored yet — waiting for the first one…"}
+              </p>
             ) : (
               <ul className="events">
                 {logRows.map((s) => {
@@ -321,10 +327,16 @@ export default function App() {
 
           <div className="card">
             <div className="cardTitle">
-              Botnet clusters <span className="muted small">DBSCAN{stats?.cluster_engine ? ` · ${stats.cluster_engine}` : ""}</span>
+              Botnet clusters{" "}
+              <span className="muted small">
+                DBSCAN{stats?.cluster_engine && stats.cluster_engine !== "none" ? ` · ${stats.cluster_engine}` : ""}
+              </span>
             </div>
             {clusters.length === 0 ? (
-              <p className="muted small">No clusters yet — the ML job labels events once enough attackers are seen.</p>
+              <p className="muted small">
+                No botnets detected yet. The ML groups attackers once at least 3 IPs show the same behaviour
+                (same password list, same commands).
+              </p>
             ) : (
               <ul className="clusters">
                 {clusters.map((c) => {
