@@ -26,3 +26,6 @@ cdk.out/
 # Local Cowrie output (docker compose bind mount)
 honeypots/cowrie/logs/*
 !honeypots/cowrie/logs/.gitkeep
+ml/attacks.json
+ml/analysis.json
+ml/export.json

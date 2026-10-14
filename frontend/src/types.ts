@@ -37,6 +37,8 @@ export type ClusterSummary = {
 };
 
 export type Stats = {
+  /** attack sessions (one attack = connect → logins → commands → disconnect) */
+  total_attacks?: number;
   total_events: number;
   unique_attackers: number;
   countries: number;
@@ -94,4 +96,84 @@ export type AttackSession = {
   head: RemoteEvent;
   /** oldest → newest */
   events: RemoteEvent[];
+};
+
+/** AI/ML verdict for one attack session (ml/attack_analysis.py). */
+export type MlLabel = {
+  attack_type: string;
+  attack_label: string;
+  confidence: number;
+  runner_up: string;
+  explanation: string[];
+  severity: "low" | "medium" | "high" | "critical";
+  mitre: [string, string][];
+  ml_cluster: number;
+  pca: [number, number];
+};
+
+/** One row of the threat database (GET /attacks). */
+export type AttackRow = {
+  id: string;
+  session?: string | null;
+  src_ip: string;
+  start: string;
+  end: string;
+  duration_s: number | null;
+  aws_region?: string;
+  sensor?: string;
+  client_version?: string | null;
+  geo_city?: string;
+  geo_country?: string;
+  geo_country_name?: string;
+  geo_org?: string;
+  abuse_score?: number;
+  login_attempts: number;
+  failed_logins: number;
+  login_success: boolean;
+  success_credential?: string | null;
+  credentials_tried: string[];
+  commands: string[];
+  downloads: number;
+  events: number;
+  botnet_id?: number | string;
+  ml: MlLabel | null;
+};
+
+export type AttackTypeInfo = {
+  type: string;
+  label: string;
+  severity: string;
+  description: string;
+  mitre: [string, string][];
+  count: number;
+};
+
+export type AnalysisSummary = {
+  scanned: boolean;
+  scanned_sessions?: number;
+  scanned_at?: string;
+  model?: {
+    classifier: string;
+    training_examples: number;
+    classes: number;
+    loo_accuracy: number;
+    clustering: string;
+    k: number;
+    silhouette: number | null;
+    cluster_type_agreement: number | null;
+    projection: string;
+    features: number;
+  };
+  timings_ms?: Record<string, number>;
+  types: AttackTypeInfo[];
+  clusters?: {
+    cluster: number;
+    size: number;
+    dominant_type: string;
+    label: string;
+    purity: number;
+    type_mix: Record<string, number>;
+    top_features: string[];
+    behaviour: string[];
+  }[];
 };

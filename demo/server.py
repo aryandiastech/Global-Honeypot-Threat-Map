@@ -14,7 +14,7 @@ up as attacks arrive.
 
 Event sources (combine freely):
   * --hours N          — pre-fill N hours of synthetic history (six botnets + lone scanners)
-  * live simulation    — one new attack every 4–9 s on a random sensor, switched on/off from the
+  * live simulation    — one new attack every 13–17 s on a random sensor, switched on/off from the
                          dashboard's Start button (or at launch with --live)
   * --cowrie-log PATH  — tail a real Cowrie cowrie.json (docker compose in honeypots/cowrie)
 
@@ -23,6 +23,10 @@ Endpoints (CORS open, like the AWS HTTP API):
   GET  /stats                 aggregates over every event held in memory
   GET  /clusters              botnet summaries from the last clustering run
   GET  /attackers/<ip>        every stored event for one attacker + its botnet summary
+  GET  /attacks               every stored attack session (summary + latest AI/ML labels)
+  GET  /attacks/<id>          one session with all its events + its AI/ML result
+  GET  /analysis              latest AI/ML scan (model card, attack types, clusters, PCA)
+  POST /analysis/scan         run the AI/ML scan (ml/attack_analysis.py) over every stored session
   GET  /simulation            live simulation status
   POST /simulation/start      start generating attacks
   POST /simulation/stop       stop generating attacks
@@ -51,8 +55,10 @@ from urllib.parse import parse_qs, unquote, urlparse
 
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "pipeline" / "cluster_lambda"))
+sys.path.insert(0, str(ROOT / "ml"))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
+import attack_analysis  # noqa: E402  (ml/attack_analysis.py)
 from botnet_clustering import cluster_records, label_records  # noqa: E402
 from simulator import SENSORS, AttackSimulator, botnet_names  # noqa: E402
 
@@ -162,10 +168,12 @@ class EventStore:
         return len(batch)
 
     def recluster(self) -> None:
+        # Cluster a snapshot outside the lock so dashboard reads never wait on the ML.
         with self._lock:
-            events = self._events
-            result = cluster_records(events)
-            label_records(events, result)
+            snapshot = list(self._events)
+        result = cluster_records(snapshot)
+        with self._lock:
+            label_records(self._events, result)
             self.clusters = result.clusters
             self.cluster_engine = result.engine
             self.last_clustered = _now_iso()
@@ -174,6 +182,68 @@ class EventStore:
     def recent(self, limit: int) -> list[dict[str, Any]]:
         with self._lock:
             return [dict(e) for e in reversed(self._events[-limit:])]
+
+    @staticmethod
+    def _session_id(e: dict[str, Any]) -> str:
+        sid = e.get("session")
+        return sid if sid else f"{e.get('src_ip', '?')}-{str(e.get('received_at', ''))[:16]}"
+
+    def sessions(self) -> list[dict[str, Any]]:
+        """One summary per attack session (newest first) — the rows of the threat database."""
+        with self._lock:
+            events = list(self._events)
+        groups: dict[str, list[dict[str, Any]]] = {}
+        for e in events:
+            if e.get("src_ip"):
+                groups.setdefault(self._session_id(e), []).append(e)
+        out = []
+        for sid, evs in groups.items():
+            evs.sort(key=lambda e: (e.get("sensor_timestamp") or e.get("received_at") or ""))
+            head = next((e for e in evs if "geo_lat" in e), evs[0])
+            logins = [e for e in evs if str(e.get("cowrie_eventid", "")).startswith("cowrie.login.")]
+            ok = next((e for e in logins if e.get("cowrie_eventid") == "cowrie.login.success"), None)
+            first_t = evs[0].get("sensor_timestamp") or evs[0].get("received_at")
+            last_t = evs[-1].get("sensor_timestamp") or evs[-1].get("received_at")
+            try:
+                duration = (datetime.fromisoformat(str(last_t).replace("Z", "+00:00"))
+                            - datetime.fromisoformat(str(first_t).replace("Z", "+00:00"))).total_seconds()
+            except ValueError:
+                duration = None
+            out.append({
+                "id": sid,
+                "session": evs[0].get("session"),
+                "src_ip": head.get("src_ip"),
+                "start": min(e.get("received_at", "") for e in evs),
+                "end": max(e.get("received_at", "") for e in evs),
+                "duration_s": None if duration is None else round(duration, 1),
+                "aws_region": head.get("aws_region"),
+                "sensor": head.get("sensor"),
+                "client_version": next((e["client_version"] for e in evs if e.get("client_version")), None),
+                "geo_city": head.get("geo_city"),
+                "geo_country": head.get("geo_country"),
+                "geo_country_name": head.get("geo_country_name"),
+                "geo_org": head.get("geo_org"),
+                "geo_lat": head.get("geo_lat"),
+                "geo_lon": head.get("geo_lon"),
+                "abuse_score": head.get("abuse_score"),
+                "login_attempts": len(logins),
+                "failed_logins": sum(1 for e in logins if e.get("cowrie_eventid") == "cowrie.login.failed"),
+                "login_success": ok is not None,
+                "success_credential": f"{ok.get('username', '')} / {ok.get('password', '')}" if ok else None,
+                "credentials_tried": [f"{e.get('username', '')}:{e.get('password', '')}" for e in logins][:12],
+                "commands": [e["command"] for e in evs if e.get("command")],
+                "downloads": sum(1 for e in evs if e.get("cowrie_eventid") == "cowrie.session.file_download"),
+                "events": len(evs),
+                "botnet_id": evs[-1].get("cluster_id"),
+            })
+        out.sort(key=lambda r: r["end"], reverse=True)
+        return out
+
+    def session_events(self, sid: str) -> list[dict[str, Any]]:
+        with self._lock:
+            rows = [dict(e) for e in self._events if self._session_id(e) == sid]
+        rows.sort(key=lambda e: (e.get("sensor_timestamp") or e.get("received_at") or ""))
+        return rows
 
     def attacker(self, ip: str, limit: int = 300) -> dict[str, Any] | None:
         """Everything stored about one source IP (the dashboard's detail panel)."""
@@ -198,8 +268,11 @@ class EventStore:
         sensors: Counter = Counter()
         hourly: Counter = Counter()
         logins_ok = logins_failed = 0
+        session_ids: set[str] = set()
         now = datetime.now(timezone.utc)
         for e in events:
+            if e.get("src_ip"):
+                session_ids.add(self._session_id(e))
             ip = e.get("src_ip")
             if ip and ip not in by_ip:
                 by_ip[ip] = e
@@ -224,6 +297,7 @@ class EventStore:
         names = botnet_names()
         return {
             "source": "local-demo",
+            "total_attacks": len(session_ids),
             "total_events": len(events),
             "unique_attackers": len(by_ip),
             "countries": len(countries),
@@ -241,6 +315,46 @@ class EventStore:
             "cluster_engine": self.cluster_engine,
             "simulated_botnet_profiles": names,
         }
+
+
+# ---------------------------------------------------------------- AI/ML analysis
+class AnalysisService:
+    """Runs ml/attack_analysis.py over every stored session and keeps the latest result."""
+
+    def __init__(self, store: EventStore) -> None:
+        self._store = store
+        self._lock = threading.Lock()
+        self.result: dict[str, Any] | None = None
+
+    def scan(self) -> dict[str, Any]:
+        sessions = self._store.sessions()
+        result = attack_analysis.analyze(sessions)
+        with self._lock:
+            self.result = result
+        return self.summary()
+
+    def summary(self) -> dict[str, Any]:
+        """The scan result without the per-session table (that rides on /attacks)."""
+        with self._lock:
+            r = self.result
+        if r is None:
+            return {"scanned": False, "types": [dict(t, type=k, count=0) for k, t in attack_analysis.ATTACK_TYPES.items()]}
+        out = {k: v for k, v in r.items() if k != "sessions"}
+        out["scanned"] = True
+        return out
+
+    def labels(self) -> dict[str, dict[str, Any]]:
+        with self._lock:
+            return dict(self.result["sessions"]) if self.result else {}
+
+    def attacks(self) -> dict[str, Any]:
+        rows = self._store.sessions()
+        labels = self.labels()
+        for r in rows:
+            r["ml"] = labels.get(r["id"])
+        pending = sum(1 for r in rows if r["ml"] is None)
+        return {"attacks": rows, "count": len(rows), "unscanned": pending,
+                "scanned_at": self.result["scanned_at"] if self.result else None}
 
 
 # ---------------------------------------------------------------- producers
@@ -362,8 +476,10 @@ def tail_cowrie(store: EventStore, path: Path, poll: float, stop: threading.Even
 
 
 # --------------------------------------------------------------------- HTTP
-def make_handler(store: EventStore, mode: str,
-                 simulation: SimulationController | None = None) -> type[BaseHTTPRequestHandler]:
+def make_handler(store: EventStore, mode: str, simulation: SimulationController | None = None,
+                 analysis: AnalysisService | None = None) -> type[BaseHTTPRequestHandler]:
+    analysis = analysis or AnalysisService(store)
+
     class Handler(BaseHTTPRequestHandler):
         server_version = "GHTM-LocalDemo/1.0"
 
@@ -411,6 +527,18 @@ def make_handler(store: EventStore, mode: str,
                     self._send(200, found)
                 else:
                     self._send(404, {"error": "unknown_attacker", "ip": ip})
+            elif route == "/attacks":
+                self._send(200, analysis.attacks())
+            elif route.startswith("/attacks/"):
+                sid = unquote(route[len("/attacks/"):])
+                events = store.session_events(sid)
+                if not events:
+                    self._send(404, {"error": "unknown_attack", "id": sid})
+                else:
+                    summary = next((r for r in store.sessions() if r["id"] == sid), None)
+                    self._send(200, {"id": sid, "summary": summary, "events": events, "ml": analysis.labels().get(sid)})
+            elif route == "/analysis":
+                self._send(200, analysis.summary())
             elif route == "/simulation":
                 if simulation is None:
                     self._send(404, {"error": "simulation_unavailable"})
@@ -419,6 +547,7 @@ def make_handler(store: EventStore, mode: str,
             elif route in ("/", "/health"):
                 self._send(200, {"ok": True, "service": "ghtm-local-demo", "mode": mode,
                                  "endpoints": ["/events?limit=100", "/stats", "/clusters", "/attackers/<ip>",
+                                               "/attacks", "/attacks/<id>", "/analysis", "POST /analysis/scan",
                                                "/simulation", "POST /simulation/start", "POST /simulation/stop",
                                                "/health"]})
             else:
@@ -429,7 +558,9 @@ def make_handler(store: EventStore, mode: str,
             if length:
                 self.rfile.read(min(length, 65536))  # body is ignored
             route = urlparse(self.path).path.rstrip("/")
-            if simulation is None:
+            if route == "/analysis/scan":
+                self._send(200, analysis.scan())
+            elif simulation is None:
                 self._send(404, {"error": "simulation_unavailable"})
             elif route == "/simulation/start":
                 self._send(200, simulation.start())
@@ -446,8 +577,10 @@ def make_handler(store: EventStore, mode: str,
 
 
 def export_snapshot(store: EventStore, out: Path, limit: int) -> None:
+    analysis = AnalysisService(store)
+    analysis.scan()
     payload = {"items": store.recent(limit), "stats": store.stats(), "source": "static-snapshot",
-               "generated_at": _now_iso()}
+               "generated_at": _now_iso(), "attacks": analysis.attacks(), "analysis": analysis.summary()}
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(json.dumps(payload, default=str, separators=(",", ":")), encoding="utf-8")
     print(f"[demo] wrote snapshot with {len(payload['items'])} events to {out}")
@@ -463,8 +596,8 @@ def main() -> int:
     ap.add_argument("--seed", type=int, default=1337, help="Random seed for reproducible demo data.")
     ap.add_argument("--live", action="store_true",
                     help="Start the live attack simulation immediately (otherwise use the dashboard's Start button).")
-    ap.add_argument("--min-interval", type=float, default=4.0, help="Minimum seconds between simulated attacks.")
-    ap.add_argument("--max-interval", type=float, default=9.0, help="Maximum seconds between simulated attacks.")
+    ap.add_argument("--min-interval", type=float, default=13.0, help="Minimum seconds between simulated attacks.")
+    ap.add_argument("--max-interval", type=float, default=17.0, help="Maximum seconds between simulated attacks.")
     ap.add_argument("--cowrie-log", type=Path, default=None,
                     help="Tail a real Cowrie cowrie.json (e.g. honeypots/cowrie/logs/cowrie.json).")
     ap.add_argument("--sensor-region", default="ap-south-1", choices=sorted(SENSORS),
@@ -510,8 +643,8 @@ def main() -> int:
 
     httpd = ThreadingHTTPServer((args.host, args.port), make_handler(store, mode, simulation))
     print(f"[demo] serving on http://{args.host}:{args.port}  (mode: {mode})")
-    print(f"[demo] live simulation {'RUNNING' if simulation.running else 'paused - press Start in the dashboard'}"
-          f" (one attack every {args.min_interval:g}-{args.max_interval:g}s)")
+    print("[demo] honeypot sensors " + ("ONLINE" if simulation.running
+                                        else "ready - press 'Deploy honeypot servers' in the dashboard"))
     print(f"[demo] try http://{args.host}:{args.port}/events?limit=5   Ctrl+C to stop")
     try:
         httpd.serve_forever()
