@@ -71,7 +71,7 @@ The implementation is pure Python (scikit-learn used if installed), so the Lambd
 3. **Clustering**: spherical **k-means** on TF-IDF vectors, k chosen by silhouette (about 0.94 on demo data),
    plus a **PCA** projection for the scatter plot. Clusters and classifier labels agree on about 98% of attacks.
 
-The dashboard's **🗄 Database · AI/ML** view shows all of it, and `POST /analysis/scan` runs it on the backend.
+The dashboard's **Database · AI/ML** view shows all of it, and `POST /analysis/scan` runs it on the backend.
 
 ## Project status
 

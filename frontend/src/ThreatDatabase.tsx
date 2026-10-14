@@ -420,7 +420,7 @@ function AttackTableRow({
                     </div>
                   </>
                 ) : null}
-                <button className="linkBtn" onClick={() => onShowOnMap(r.src_ip)}>🌍 show attacker on the map</button>
+                <button className="linkBtn" onClick={() => onShowOnMap(r.src_ip)}>show attacker on the map</button>
               </div>
 
               <div>

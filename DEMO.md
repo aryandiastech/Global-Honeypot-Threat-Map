@@ -72,7 +72,7 @@ npm run dev
 - **Fresh deployment**: the dashboard starts **empty** (0 attacks, 0 attackers, 0 botnets), as if the honeypots were
   just deployed. Everything you see afterwards was captured after you pressed Deploy. To open with 24 h of
   pre-recorded history instead, start the backend with `python demo/server.py --hours 24`.
-- **🚀 Deploy honeypot servers** (top right): puts the two sensors online, and attacks start arriving (the local
+- **Deploy honeypot servers** (top right): puts the two sensors online, and attacks start arriving (the local
   backend generates one every **13–17 seconds**). A red pop-up announces each one, a pulsing ring marks the attacker
   on the globe, and the attack is stored in the **attack database** on the right. Press **■ Take servers offline** to
   stop.
@@ -83,7 +83,7 @@ npm run dev
 - **KPI bar**: **Attacks** (one per intruder connection, so 0 → 1 → 2 …), **Log events** (raw honeypot log lines:
   each attack writes several, e.g. connect, every password tried, every command, disconnect), unique attackers,
   countries, botnets found by the ML, and cracked logins. Hover a tile for its definition.
-- **🗄 Database · AI/ML** (top right, next to 🌍 Map): the threat database. Every stored attack in one table, plus an
+- **Database · AI/ML** (top right, next to Map): the threat database. Every stored attack in one table, plus an
   AI/ML analysis that runs automatically on each new attack (or press **🧠 Run AI/ML scan**):
   - a **Naive Bayes classifier** labels each attack's type (recon scan, SSH brute force, credential compromise,
     system discovery, malware download & execution, persistence backdoor, IoT botnet), with a confidence score,
@@ -132,9 +132,9 @@ Within ~2 s your login attempts and commands appear in the feed. Private/LAN IPs
 
 1. **Problem** (30 s): internet-facing SSH is attacked within minutes, but raw logs don't show *who is coordinated*.
 2. **Architecture** (1 min): Cowrie on Fargate in 2 regions → S3 → ingest Lambda → DynamoDB → enrich Lambda (IPinfo + AbuseIPDB) → scheduled DBSCAN Lambda → HTTP API → React + Mapbox. Show `wiki/pages/System-Architecture.md`.
-3. **Live dashboard** (2 min): "the honeypots have just been deployed", so everything reads 0. Press **🚀 Deploy honeypot
+3. **Live dashboard** (2 min): "the honeypots have just been deployed", so everything reads 0. Press **Deploy honeypot
    servers** and let attacks land. The ML flags its first botnet after about 6–8 attacks.
-   Switch to **🗄 Database · AI/ML** to show every stored attack being classified and clustered as it arrives:
+   Switch to **Database · AI/ML** to show every stored attack being classified and clustered as it arrives:
    open one row and walk through the verdict, its MITRE techniques and the "why" features. Click a pop-up to open
    the attack's details and walk through its session timeline and stored record. Then click a botnet (e.g. *Malware
    dropper*): its IPs span several countries but run the same `wget … && ./x.sh` payload. That's the ML insight.

@@ -62,7 +62,7 @@ function DeployButton({
   if (!available) {
     return (
       <button className="simBtn" disabled title="Start the local backend (start-demo.bat) first">
-        🚀 Deploy honeypot servers
+        Deploy honeypot servers
       </button>
     );
   }
@@ -73,7 +73,7 @@ function DeployButton({
       disabled={busy}
       title={running ? "Honeypot servers are online and capturing attacks" : "Put the vulnerable SSH honeypots online in Mumbai and N. Virginia"}
     >
-      {running ? "■ Take servers offline" : "🚀 Deploy honeypot servers"}
+      {running ? "■ Take servers offline" : "Deploy honeypot servers"}
     </button>
   );
 }
@@ -173,10 +173,10 @@ export default function App() {
         <div className="topActions">
           <div className="viewSwitch" role="tablist" aria-label="View">
             <button role="tab" aria-selected={view === "map"} className={view === "map" ? "on" : ""} onClick={() => setView("map")}>
-              🌍 Map
+              Map
             </button>
             <button role="tab" aria-selected={view === "database"} className={view === "database" ? "on" : ""} onClick={() => setView("database")}>
-              🗄 Database · AI/ML
+              Database · AI/ML
             </button>
           </div>
           {source !== "aws" ? (
@@ -283,7 +283,7 @@ export default function App() {
             ) : logRows.length === 0 ? (
               <p className="muted small">
                 {source === "local-demo" && !sim?.running
-                  ? "No attacks yet. Press 🚀 Deploy honeypot servers to put the sensors online."
+                  ? "No attacks yet. Press Deploy honeypot servers to put the sensors online."
                   : focusCluster !== null
                     ? "No stored attacks from this botnet yet."
                     : "No attacks stored yet — waiting for the first one…"}
