@@ -159,7 +159,7 @@ export default function App() {
     <div className="shell">
       <header className="topbar">
         <div className="brand">
-          <div className="title">🍯 Global Honeypot Threat Map</div>
+          <div className="title">Global Honeypot Threat Map</div>
           <div className="subtitle">Cowrie SSH honeypots → serverless pipeline → geo/reputation enrichment → DBSCAN botnet detection</div>
         </div>
         <div className="kpis">
