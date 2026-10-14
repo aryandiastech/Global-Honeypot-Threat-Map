@@ -119,7 +119,7 @@ export default function ThreatDatabase({ apiBase, source, pollMs, events, onShow
           </div>
           <div className="scanRow">
             <button className="scanBtn" onClick={() => void db.scan(1200)} disabled={!db.canScan || db.scanning || db.rows.length === 0}>
-              {db.scanning ? "Scanning…" : "🧠 Run AI/ML scan"}
+              {db.scanning ? "Scanning…" : "Run AI/ML scan"}
             </button>
             <label className="small muted autoScan">
               <input type="checkbox" checked={autoScan} onChange={(e) => setAutoScan(e.target.checked)} disabled={!db.canScan} />

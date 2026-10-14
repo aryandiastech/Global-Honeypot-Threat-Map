@@ -84,7 +84,7 @@ npm run dev
   each attack writes several, e.g. connect, every password tried, every command, disconnect), unique attackers,
   countries, botnets found by the ML, and cracked logins. Hover a tile for its definition.
 - **Database · AI/ML** (top right, next to Map): the threat database. Every stored attack in one table, plus an
-  AI/ML analysis that runs automatically on each new attack (or press **🧠 Run AI/ML scan**):
+  AI/ML analysis that runs automatically on each new attack (or press **Run AI/ML scan**):
   - a **Naive Bayes classifier** labels each attack's type (recon scan, SSH brute force, credential compromise,
     system discovery, malware download & execution, persistence backdoor, IoT botnet), with a confidence score,
     the features that drove the decision, and its **MITRE ATT&CK** techniques
