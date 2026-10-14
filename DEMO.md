@@ -70,12 +70,12 @@ npm run dev
 ## 4. What you'll see
 
 - **Fresh deployment**: the dashboard starts **empty** (0 attacks, 0 attackers, 0 botnets), as if the honeypots were
-  just deployed. Everything you see afterwards was captured after you pressed Start. To open with 24 h of
+  just deployed. Everything you see afterwards was captured after you pressed Deploy. To open with 24 h of
   pre-recorded history instead, start the backend with `python demo/server.py --hours 24`.
-- **▶ Start attack simulation** (top right): starts live traffic. Every **13–17 seconds** a new attack hits one of
-  the two honeypot sensors. A red pop-up announces it, a pulsing ring marks the attacker on the globe, and the attack
-  is stored in the **attack database** on the right. Press **■ Stop simulation** to pause it. The button shows the
-  attack count and a countdown to the next attack.
+- **🚀 Deploy honeypot servers** (top right): puts the two sensors online, and attacks start arriving (the local
+  backend generates one every **13–17 seconds**). A red pop-up announces each one, a pulsing ring marks the attacker
+  on the globe, and the attack is stored in the **attack database** on the right. Press **■ Take servers offline** to
+  stop.
 - **Attack details**: click an attacker **dot on the map**, a **row in the attack database**, or a **pop-up**. A
   panel opens with the attacker's location and network, abuse score, ML botnet classification, every attack session
   as a step-by-step timeline (connection → login attempts → commands → disconnect), and the raw stored record as it
@@ -97,7 +97,8 @@ npm run dev
 - **Botnet clusters**: DBSCAN groups IPs by *behaviour* (shared password dictionary, shared payload commands, same SSH client), not by location. Each cluster gets a tactic tag (IoT worm, malware dropper, SSH-key backdoor…). **Click a cluster** to isolate it on the map and in the feed.
 - **Attack database**: one row per stored attack session (newest first, `NEW` for the last 20 s). While the
   simulation runs, the dashboard refreshes every 2 s.
-- The **badge** (top right) says where the data comes from: `Local backend · simulated`, `AWS · live`, or `Offline snapshot`.
+- A **badge** appears top right only when the data isn't coming from the local backend: `AWS live` or `Snapshot`
+  (offline fallback).
 
 ## 5. Optional: a real honeypot, live on stage
 
@@ -131,13 +132,13 @@ Within ~2 s your login attempts and commands appear in the feed. Private/LAN IPs
 
 1. **Problem** (30 s): internet-facing SSH is attacked within minutes, but raw logs don't show *who is coordinated*.
 2. **Architecture** (1 min): Cowrie on Fargate in 2 regions → S3 → ingest Lambda → DynamoDB → enrich Lambda (IPinfo + AbuseIPDB) → scheduled DBSCAN Lambda → HTTP API → React + Mapbox. Show `wiki/pages/System-Architecture.md`.
-3. **Live dashboard** (2 min): "the honeypots have just been deployed", so everything reads 0. Press **▶ Start attack
-   simulation** and let attacks land (one every 13–17 s). The ML flags its first botnet after about 6–8 attacks.
+3. **Live dashboard** (2 min): "the honeypots have just been deployed", so everything reads 0. Press **🚀 Deploy honeypot
+   servers** and let attacks land. The ML flags its first botnet after about 6–8 attacks.
    Switch to **🗄 Database · AI/ML** to show every stored attack being classified and clustered as it arrives:
    open one row and walk through the verdict, its MITRE techniques and the "why" features. Click a pop-up to open
    the attack's details and walk through its session timeline and stored record. Then click a botnet (e.g. *Malware
    dropper*): its IPs span several countries but run the same `wget … && ./x.sh` payload. That's the ML insight.
-   Press **■ Stop** when done.
+   Press **■ Take servers offline** when done.
 4. **Real honeypot** (1 min, optional): `ssh -p 2222 root@localhost`, type `uname -a`, and watch it appear.
 5. **Honesty slide** (30 s): the demo uses simulated traffic because the AWS stack is torn down. The code paths are identical, and `DEPLOY-AWS.md` redeploys it to any account in about 15 minutes.
 
@@ -159,5 +160,5 @@ Within ~2 s your login attempts and commands appear in the feed. Private/LAN IPs
 | "Map error: … 401" | Only with a Mapbox token: token typo or URL restriction. Clear `VITE_MAPBOX_TOKEN` to use the free map |
 | `python` not found on Windows | Reinstall Python with "Add to PATH", or use `py demo/server.py` |
 | Port 8000 busy | `python demo/server.py --port 8010`, and set `VITE_API_URL=http://localhost:8010` |
-| Start button greyed out | The backend isn't running (offline snapshot mode). Start it with `start-demo.bat` |
+| Deploy button greyed out | The backend isn't running (offline snapshot mode). Start it with `start-demo.bat` |
 | `start-demo.ps1` blocked | Use `start-demo.bat`, or `powershell -ExecutionPolicy Bypass -File .\start-demo.ps1` |

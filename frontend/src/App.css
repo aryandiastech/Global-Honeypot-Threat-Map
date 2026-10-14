@@ -124,19 +124,16 @@
   gap: 10px;
 }
 
-/* simulation start/stop */
-.simWrap {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 3px;
-}
-
+/* deploy / take-offline button */
 .simBtn {
   font: inherit;
   font-size: 13px;
   font-weight: 700;
-  padding: 9px 16px;
+  height: 36px;
+  padding: 0 16px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   border-radius: 10px;
   border: 1px solid var(--border);
   background: rgba(255, 255, 255, 0.05);
@@ -170,9 +167,7 @@
   }
 }
 
-.simMeta {
-  font-variant-numeric: tabular-nums;
-}
+
 
 /* ------------------------------------------------------------------ layout */
 .body {
@@ -202,7 +197,8 @@
   font: inherit;
   font-size: 12.5px;
   font-weight: 600;
-  padding: 8px 12px;
+  height: 34px;
+  padding: 0 12px;
   background: transparent;
   color: var(--muted);
   border: none;

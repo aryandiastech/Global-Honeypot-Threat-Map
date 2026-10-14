@@ -25,7 +25,7 @@ Regenerate the offline snapshot with `python demo/server.py --export-snapshot fr
 | `src/useThreatFeed.ts` | polling `GET /events` (+ `/stats` when available), snapshot fallback |
 | `src/ThreatMap.tsx` | globe (MapLibre or Mapbox): great-circle arcs, attacker dots + popups, pulsing sensors |
 | `src/analytics.ts` | client-side stats, cluster colours, tactic tags |
-| `src/App.tsx` | layout: KPIs, Start/Stop simulation, new-attack pop-ups, attack database (sessions), botnet list (click to filter), top origins/credentials |
+| `src/App.tsx` | layout: KPIs, Deploy / take-offline button (starts/stops the live attack feed), new-attack pop-ups, attack database (sessions), botnet list (click to filter), top origins/credentials |
 | `src/AttackDetails.tsx` | attacker panel: origin, threat intel, ML classification, session timelines, raw stored record |
 
 Restart `npm run dev` after changes.

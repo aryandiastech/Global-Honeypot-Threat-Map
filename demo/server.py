@@ -643,8 +643,8 @@ def main() -> int:
 
     httpd = ThreadingHTTPServer((args.host, args.port), make_handler(store, mode, simulation))
     print(f"[demo] serving on http://{args.host}:{args.port}  (mode: {mode})")
-    print(f"[demo] live simulation {'RUNNING' if simulation.running else 'paused - press Start in the dashboard'}"
-          f" (one attack every {args.min_interval:g}-{args.max_interval:g}s)")
+    print("[demo] honeypot sensors " + ("ONLINE" if simulation.running
+                                        else "ready - press 'Deploy honeypot servers' in the dashboard"))
     print(f"[demo] try http://{args.host}:{args.port}/events?limit=5   Ctrl+C to stop")
     try:
         httpd.serve_forever()

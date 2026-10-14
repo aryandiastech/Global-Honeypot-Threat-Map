@@ -19,7 +19,7 @@ const NEW_MS = 20_000;
 
 const SOURCE_BADGE: Record<FeedSource, { label: string; cls: string; hint: string }> = {
   aws: { label: "AWS live", cls: "pill live", hint: "DynamoDB via the deployed HTTP API" },
-  "local-demo": { label: "Simulated", cls: "pill demo", hint: "Local backend (demo/server.py) with simulated attackers" },
+  "local-demo": { label: "Local backend", cls: "pill demo", hint: "Local backend (demo/server.py)" },
   snapshot: { label: "Snapshot", cls: "pill snap", hint: "Bundled demo-snapshot.json (no backend running)" },
   none: { label: "No data", cls: "pill", hint: "" },
 };
@@ -47,39 +47,34 @@ function Bars({ rows }: { rows: [string, number][] }) {
   );
 }
 
-function SimulationButton({
-  status,
+/** Brings the honeypot sensors online (starts capturing attacks) or takes them offline. */
+function DeployButton({
+  running,
   available,
   busy,
-  now,
   onToggle,
 }: {
-  status: SimulationStatus | null;
+  running: boolean;
   available: boolean;
   busy: boolean;
-  now: number;
   onToggle: () => void;
 }) {
   if (!available) {
     return (
-      <button className="simBtn" disabled title="Start the local backend (start-demo.bat) to run the live attack simulation">
-        ▶ Start attack simulation
+      <button className="simBtn" disabled title="Start the local backend (start-demo.bat) first">
+        🚀 Deploy honeypot servers
       </button>
     );
   }
-  const running = Boolean(status?.running);
-  const nextIn = status?.next_attack_at ? Math.max(0, Math.ceil((Date.parse(status.next_attack_at) - now) / 1000)) : null;
   return (
-    <div className="simWrap">
-      <button className={`simBtn ${running ? "stop" : "start"}`} onClick={onToggle} disabled={busy}>
-        {running ? "■ Stop simulation" : "▶ Start attack simulation"}
-      </button>
-      <div className="simMeta muted small">
-        {running
-          ? `${status?.attacks ?? 0} attack${status?.attacks === 1 ? "" : "s"} · next in ${nextIn ?? "…"}s`
-          : `1 attack every ${status?.min_interval ?? 13}–${status?.max_interval ?? 17}s`}
-      </div>
-    </div>
+    <button
+      className={`simBtn ${running ? "stop" : "start"}`}
+      onClick={onToggle}
+      disabled={busy}
+      title={running ? "Honeypot servers are online and capturing attacks" : "Put the vulnerable SSH honeypots online in Mumbai and N. Virginia"}
+    >
+      {running ? "■ Take servers offline" : "🚀 Deploy honeypot servers"}
+    </button>
   );
 }
 
@@ -185,11 +180,13 @@ export default function App() {
             </button>
           </div>
           {source !== "aws" ? (
-            <SimulationButton status={sim} available={source === "local-demo" && Boolean(sim)} busy={simBusy} now={now} onToggle={toggleSimulation} />
+            <DeployButton running={Boolean(sim?.running)} available={source === "local-demo" && Boolean(sim)} busy={simBusy} onToggle={toggleSimulation} />
           ) : null}
-          <div className={badge.cls} title={badge.hint}>
-            <span className="dot" /> {badge.label}
-          </div>
+          {source !== "local-demo" ? (
+            <div className={badge.cls} title={badge.hint}>
+              <span className="dot" /> {badge.label}
+            </div>
+          ) : null}
         </div>
       </header>
 
@@ -286,7 +283,7 @@ export default function App() {
             ) : logRows.length === 0 ? (
               <p className="muted small">
                 {source === "local-demo" && !sim?.running
-                  ? "No attacks yet — the honeypots are freshly deployed. Press ▶ Start attack simulation."
+                  ? "No attacks yet. Press 🚀 Deploy honeypot servers to put the sensors online."
                   : focusCluster !== null
                     ? "No stored attacks from this botnet yet."
                     : "No attacks stored yet — waiting for the first one…"}

@@ -285,7 +285,7 @@ export default function ThreatDatabase({ apiBase, source, pollMs, events, onShow
         </div>
         {db.rows.length === 0 ? (
           <p className="muted small">
-            {db.loading ? "Loading…" : "No attacks stored yet. Start the attack simulation; every attack lands here and is classified automatically."}
+            {db.loading ? "Loading…" : "No attacks stored yet. Deploy the honeypot servers; every attack they capture lands here and is classified automatically."}
           </p>
         ) : (
           <div className="tableScroll">
