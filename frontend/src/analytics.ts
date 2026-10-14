@@ -1,6 +1,6 @@
 import type { AttackSession, ClusterSummary, RemoteEvent, Stats } from "./types";
 
-const PALETTE = ["#ff595e", "#ffca3a", "#8ac926", "#1982c4", "#c77dff", "#f15bb5", "#00bbf9", "#ff924c"];
+export const PALETTE = ["#ff595e", "#ffca3a", "#8ac926", "#1982c4", "#c77dff", "#f15bb5", "#00bbf9", "#ff924c"];
 export const NOISE_COLOR = "#5b8def";
 
 export const isBotnet = (id: RemoteEvent["cluster_id"]) =>
@@ -110,6 +110,7 @@ export function computeStats(events: RemoteEvent[]): Stats {
     }));
 
   return {
+    total_attacks: groupSessions(events).length,
     total_events: events.length,
     unique_attackers: ips.size,
     countries: countries.size,

@@ -20,6 +20,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "pipeline" / "cluster_lambda"))
 sys.path.insert(0, str(ROOT / "demo"))
+sys.path.insert(0, str(ROOT / "ml"))
 
 
 def _load(name: str, path: Path):
@@ -34,6 +35,7 @@ ingest = _load("ingest_handler", ROOT / "pipeline" / "ingest_lambda" / "handler.
 enrich = _load("enrich_handler", ROOT / "pipeline" / "enrich_lambda" / "handler.py")
 server = _load("demo_server", ROOT / "demo" / "server.py")
 
+import attack_analysis as aa  # noqa: E402
 import botnet_clustering as bc  # noqa: E402
 from simulator import AttackSimulator  # noqa: E402
 
@@ -90,6 +92,43 @@ class ClusteringTests(unittest.TestCase):
         ips = sorted(profiles)
         labels = bc._dbscan_pure(bc.distance_matrix([profiles[i] for i in ips]), bc.DEFAULT_EPS, bc.DEFAULT_MIN_SAMPLES)
         self._check(bc.ClusterResult(dict(zip(ips, labels)), [], 0, "pure-python"), truth)
+
+
+class AttackAnalysisTests(unittest.TestCase):
+    @staticmethod
+    def _expected(s) -> str:
+        cmds = " ".join(s["commands"]).lower()
+        if s["login_attempts"] == 0:
+            return "recon_scan"
+        if not s["login_success"]:
+            return "brute_force"
+        if not s["commands"]:
+            return "credential_compromise"
+        if "authorized_keys" in cmds:
+            return "persistence"
+        if "busybox" in cmds:
+            return "iot_botnet"
+        if "wget" in cmds or "curl" in cmds:
+            return "malware_dropper"
+        return "discovery"
+
+    def test_classifier_matches_simulated_ground_truth(self) -> None:
+        sim = AttackSimulator(seed=21)
+        store = server.EventStore(intel=sim.intel, lab_latlon=(0.0, 0.0), sensor_region="ap-south-1",
+                                  use_live_intel=False)
+        store.ingest(sim.history(hours=12), source="t", use_event_time=True)
+        sessions = store.sessions()
+        result = aa.analyze(sessions)
+        hits = sum(result["sessions"][s["id"]]["attack_type"] == self._expected(s) for s in sessions)
+        self.assertGreaterEqual(hits / len(sessions), 0.95)
+        self.assertGreaterEqual(result["model"]["loo_accuracy"], 0.85)
+        self.assertGreater(result["model"]["silhouette"], 0.5)
+        self.assertTrue(all(len(v["pca"]) == 2 for v in result["sessions"].values()))
+
+    def test_empty_and_tiny_inputs(self) -> None:
+        self.assertEqual(aa.analyze([])["scanned_sessions"], 0)
+        one = aa.analyze([{"id": "x", "login_attempts": 0, "commands": []}])
+        self.assertEqual(one["sessions"]["x"]["attack_type"], "recon_scan")
 
 
 class EnrichStreamTests(unittest.TestCase):
@@ -151,6 +190,22 @@ class DemoServerTests(unittest.TestCase):
         self.assertEqual(self.store.stats()["total_events"], n)
         _, events, _ = self._get("/events?limit=1")
         self.assertIn("simulation", events)
+
+    def test_attacks_and_scan(self) -> None:
+        _, before, _ = self._get("/attacks")
+        self.assertGreater(before["count"], 0)
+        self.assertEqual(before["unscanned"], before["count"])
+        _, summary = self._post("/analysis/scan")
+        self.assertTrue(summary["scanned"])
+        self.assertIn("model", summary)
+        _, after, _ = self._get("/attacks")
+        self.assertEqual(after["unscanned"], 0)
+        row = after["attacks"][0]
+        self.assertIn(row["ml"]["attack_type"], aa.ATTACK_TYPES)
+        _, detail, _ = self._get(f"/attacks/{row['id']}")
+        self.assertEqual(len(detail["events"]), row["events"])
+        _, stats, _ = self._get("/stats")
+        self.assertGreaterEqual(stats["total_attacks"], after["count"] - 1)
 
     def test_attacker_details(self) -> None:
         _, body, _ = self._get("/events?limit=1")

@@ -34,7 +34,7 @@ React 3D globe (MapLibre + OpenFreeMap, or Mapbox when a token is set) showing a
 | `pipeline/enrich_lambda/` | DynamoDB Stream consumer: IPinfo geo + AbuseIPDB reputation (INSERT-only, cached per IP) |
 | `pipeline/cluster_lambda/` | Scheduled botnet clustering; `botnet_clustering.py` is the single ML implementation |
 | `pipeline/read_api/` | HTTP API Lambda: `GET /events` |
-| `ml/` | Offline CLI over exported events (`cluster_events.py`) |
+| `ml/` | Attack-type AI/ML (`attack_analysis.py`: Naive Bayes + k-means + PCA) and the offline botnet CLI (`cluster_events.py`) |
 | `demo/` | **Local demo backend** (`server.py`) + attack simulator. No AWS, stdlib only |
 | `frontend/` | React + Vite dashboard: MapLibre globe by default, Mapbox GL when a token is set |
 | `infra/sam/` | SAM template: bucket, table + GSIs, 4 Lambdas, HTTP API |
@@ -60,6 +60,19 @@ real botnets are spread worldwide, and the map shows that.
 
 The implementation is pure Python (scikit-learn used if installed), so the Lambda ships without numpy/scipy.
 
+## ML: what kind of attack was it?
+
+`ml/attack_analysis.py` works per **attack session** (botnet clustering works per IP):
+
+1. **Features**: behaviour tokens (login attempts, success, commands, download) plus tokens from every shell command.
+2. **Classification**: multinomial **Naive Bayes** trained on a labelled corpus of 50 known honeypot attack
+   patterns, covering 7 types mapped to **MITRE ATT&CK**. It reports confidence and the features behind each
+   decision. Leave-one-out accuracy is 92%, and it agrees 100% with the simulator's ground truth.
+3. **Clustering**: spherical **k-means** on TF-IDF vectors, k chosen by silhouette (about 0.94 on demo data),
+   plus a **PCA** projection for the scatter plot. Clusters and classifier labels agree on about 98% of attacks.
+
+The dashboard's **🗄 Database · AI/ML** view shows all of it, and `POST /analysis/scan` runs it on the backend.
+
 ## Project status
 
 | Track | Status |
@@ -68,7 +81,7 @@ The implementation is pure Python (scikit-learn used if installed), so the Lambd
 | Data plane | ✅ SAM: S3 ingest (batch writes), DynamoDB + timeline GSI, enrich (loop-safe), scheduled clustering, `GET /events` |
 | ML | ✅ Behavioural DBSCAN shared by Lambda, CLI and demo; tactic tagging in UI |
 | Dashboard | ✅ Globe with great-circle arcs, attacker dots + popups, sensors, KPIs, botnet filter, live feed, AWS/demo/snapshot modes |
-| Demo | ✅ Local backend (simulated history, Start/Stop live attacks every 4–9 s, real Cowrie tailing), attack detail panel, offline snapshot, one-click start scripts |
+| Demo | ✅ Local backend (empty start, Start/Stop live attacks every 13–17 s, real Cowrie tailing), attack detail panel, AI/ML threat database, offline snapshot, one-click start scripts |
 | Tests / CI | ✅ Unit tests, Docker build, dashboard build, ML CLI in GitHub Actions |
 | Not done (production hardening) | Auth on the read API, alarms/DLQ, WebSockets instead of polling, NLB to expose port 22 |
 

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import "./App.css";
 import AttackDetails from "./AttackDetails";
 import { clusterColor, clusterTactic, countryCode, groupSessions, isBotnet, summarizeSession, timeAgo } from "./analytics";
+import ThreatDatabase from "./ThreatDatabase";
 import ThreatMap, { REGION_NODES } from "./ThreatMap";
 import type { AttackSession, FeedSource, SimulationStatus } from "./types";
 import { useThreatFeed } from "./useThreatFeed";
@@ -17,9 +18,9 @@ const TOAST_MS = 6_000;
 const NEW_MS = 20_000;
 
 const SOURCE_BADGE: Record<FeedSource, { label: string; cls: string; hint: string }> = {
-  aws: { label: "AWS · live", cls: "pill live", hint: "DynamoDB via the deployed HTTP API" },
-  "local-demo": { label: "Local backend · simulated", cls: "pill demo", hint: "demo/server.py on this laptop" },
-  snapshot: { label: "Offline snapshot", cls: "pill snap", hint: "Bundled demo-snapshot.json (no backend running)" },
+  aws: { label: "AWS live", cls: "pill live", hint: "DynamoDB via the deployed HTTP API" },
+  "local-demo": { label: "Simulated", cls: "pill demo", hint: "Local backend (demo/server.py) with simulated attackers" },
+  snapshot: { label: "Snapshot", cls: "pill snap", hint: "Bundled demo-snapshot.json (no backend running)" },
   none: { label: "No data", cls: "pill", hint: "" },
 };
 
@@ -43,20 +44,6 @@ function Bars({ rows }: { rows: [string, number][] }) {
         </li>
       ))}
     </ul>
-  );
-}
-
-function Sparkline({ values }: { values: number[] }) {
-  // values[0] = last hour; draw oldest → newest left to right
-  const pts = [...values].reverse();
-  const max = Math.max(1, ...pts);
-  const w = 100;
-  const h = 28;
-  const d = pts.map((v, i) => `${(i / (pts.length - 1)) * w},${h - (v / max) * (h - 2) - 1}`).join(" ");
-  return (
-    <svg className="spark" viewBox={`0 0 ${w} ${h}`} preserveAspectRatio="none" aria-label="events per hour, last 24h">
-      <polyline points={d} fill="none" stroke="var(--accent)" strokeWidth="1.5" vectorEffect="non-scaling-stroke" />
-    </svg>
   );
 }
 
@@ -90,7 +77,7 @@ function SimulationButton({
       <div className="simMeta muted small">
         {running
           ? `${status?.attacks ?? 0} attack${status?.attacks === 1 ? "" : "s"} · next in ${nextIn ?? "…"}s`
-          : `1 attack every ${status?.min_interval ?? 4}–${status?.max_interval ?? 9}s`}
+          : `1 attack every ${status?.min_interval ?? 13}–${status?.max_interval ?? 17}s`}
       </div>
     </div>
   );
@@ -109,6 +96,7 @@ export default function App() {
   const [selected, setSelected] = useState<{ ip: string; sessionKey?: string | null } | null>(null);
   const [toasts, setToasts] = useState<Toast[]>([]);
   const [arcs, setArcs] = useState(0);
+  const [view, setView] = useState<"map" | "database">("map");
   const [now, setNow] = useState(() => Date.now());
   const onArcCount = useCallback((n: number) => setArcs(n), []);
   const onSelectIp = useCallback((ip: string) => setSelected({ ip }), []);
@@ -161,13 +149,14 @@ export default function App() {
     for (const t of added) window.setTimeout(() => setToasts((all) => all.filter((x) => x.id !== t.id)), TOAST_MS);
   }, [sessions, feed.lastUpdated]);
 
-  const kpis: [string, string | number][] = stats
+  const kpis: [string, string | number, string?][] = stats
     ? [
-        ["Events", nf.format(stats.total_events)],
+        ["Attacks", nf.format(stats.total_attacks ?? sessions.length), "Attack sessions: one per intruder connection"],
+        ["Log events", nf.format(stats.total_events), "Raw honeypot log lines: every attack writes several (connect, each password tried, each command, disconnect)"],
         ["Attackers", nf.format(stats.unique_attackers)],
         ["Countries", stats.countries],
-        ["Botnets (ML)", stats.botnets],
-        ["Logins cracked", nf.format(stats.login_success)],
+        ["Botnets", stats.botnets, "Coordinated attacker groups found by the ML (DBSCAN on shared passwords/commands)"],
+        ["Cracked", nf.format(stats.login_success), "Successful logins: attackers who guessed a password"],
       ]
     : [];
 
@@ -179,20 +168,22 @@ export default function App() {
           <div className="subtitle">Cowrie SSH honeypots → serverless pipeline → geo/reputation enrichment → DBSCAN botnet detection</div>
         </div>
         <div className="kpis">
-          {kpis.map(([k, v]) => (
-            <div className="kpi" key={k}>
+          {kpis.map(([k, v, hint]) => (
+            <div className="kpi" key={k} title={hint}>
               <div className="kpiValue">{v}</div>
               <div className="kpiLabel">{k}</div>
             </div>
           ))}
-          {stats?.events_last_24h ? (
-            <div className="kpi wide">
-              <Sparkline values={stats.events_last_24h} />
-              <div className="kpiLabel">Events / hour · 24h</div>
-            </div>
-          ) : null}
         </div>
         <div className="topActions">
+          <div className="viewSwitch" role="tablist" aria-label="View">
+            <button role="tab" aria-selected={view === "map"} className={view === "map" ? "on" : ""} onClick={() => setView("map")}>
+              🌍 Map
+            </button>
+            <button role="tab" aria-selected={view === "database"} className={view === "database" ? "on" : ""} onClick={() => setView("database")}>
+              🗄 Database · AI/ML
+            </button>
+          </div>
           {source !== "aws" ? (
             <SimulationButton status={sim} available={source === "local-demo" && Boolean(sim)} busy={simBusy} now={now} onToggle={toggleSimulation} />
           ) : null}
@@ -202,7 +193,22 @@ export default function App() {
         </div>
       </header>
 
-      <main className="main">
+      <div className="body">
+      {view === "database" ? (
+        <div className="dbOverlay">
+          <ThreatDatabase
+            apiBase={apiBase}
+            source={source}
+            pollMs={simRunning ? LIVE_POLL_MS : POLL_MS}
+            events={events}
+            onShowOnMap={(ip) => {
+              setView("map");
+              setSelected({ ip });
+            }}
+          />
+        </div>
+      ) : null}
+      <main className="main" aria-hidden={view === "database"}>
         <section className="mapPanel">
           <ThreatMap
             token={token}
@@ -402,6 +408,7 @@ export default function App() {
           </div>
         </aside>
       </main>
+      </div>
     </div>
   );
 }

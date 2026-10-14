@@ -69,10 +69,10 @@ npm run dev
 
 ## 4. What you'll see
 
-- **Fresh deployment**: the dashboard starts **empty** (0 events, 0 attackers, 0 botnets), as if the honeypots were
+- **Fresh deployment**: the dashboard starts **empty** (0 attacks, 0 attackers, 0 botnets), as if the honeypots were
   just deployed. Everything you see afterwards was captured after you pressed Start. To open with 24 h of
   pre-recorded history instead, start the backend with `python demo/server.py --hours 24`.
-- **▶ Start attack simulation** (top right): starts live traffic. Every **4–9 seconds** a new attack hits one of
+- **▶ Start attack simulation** (top right): starts live traffic. Every **13–17 seconds** a new attack hits one of
   the two honeypot sensors. A red pop-up announces it, a pulsing ring marks the attacker on the globe, and the attack
   is stored in the **attack database** on the right. Press **■ Stop simulation** to pause it. The button shows the
   attack count and a countdown to the next attack.
@@ -80,7 +80,19 @@ npm run dev
   panel opens with the attacker's location and network, abuse score, ML botnet classification, every attack session
   as a step-by-step timeline (connection → login attempts → commands → disconnect), and the raw stored record as it
   sits in the database.
-- **KPI bar**: total events, unique attackers, countries, botnets found by the ML, cracked logins, and a 24 h activity sparkline.
+- **KPI bar**: **Attacks** (one per intruder connection, so 0 → 1 → 2 …), **Log events** (raw honeypot log lines:
+  each attack writes several, e.g. connect, every password tried, every command, disconnect), unique attackers,
+  countries, botnets found by the ML, and cracked logins. Hover a tile for its definition.
+- **🗄 Database · AI/ML** (top right, next to 🌍 Map): the threat database. Every stored attack in one table, plus an
+  AI/ML analysis that runs automatically on each new attack (or press **🧠 Run AI/ML scan**):
+  - a **Naive Bayes classifier** labels each attack's type (recon scan, SSH brute force, credential compromise,
+    system discovery, malware download & execution, persistence backdoor, IoT botnet), with a confidence score,
+    the features that drove the decision, and its **MITRE ATT&CK** techniques
+  - **k-means clustering** groups attacks by behaviour without labels (k picked automatically by silhouette
+    score), and a **PCA scatter plot** shows the groups, where similar attacks land together
+  - the model card shows the classifier's accuracy, cluster quality, and how often both methods agree
+  - click a type, cluster or dot to filter; click a row for the full session (passwords tried, commands,
+    timeline, raw records); "show attacker on the map" jumps back to the globe
 - **Globe**: attack arcs from each attacker to the honeypot sensor it hit (Mumbai `ap-south-1` or N. Virginia `us-east-1`). Arc colour = botnet cluster, blue = lone scanner, bright arcs = the last 90 s. Click a dot for IP, location, network and abuse score.
 - **Botnet clusters**: DBSCAN groups IPs by *behaviour* (shared password dictionary, shared payload commands, same SSH client), not by location. Each cluster gets a tactic tag (IoT worm, malware dropper, SSH-key backdoor…). **Click a cluster** to isolate it on the map and in the feed.
 - **Attack database**: one row per stored attack session (newest first, `NEW` for the last 20 s). While the
@@ -120,8 +132,9 @@ Within ~2 s your login attempts and commands appear in the feed. Private/LAN IPs
 1. **Problem** (30 s): internet-facing SSH is attacked within minutes, but raw logs don't show *who is coordinated*.
 2. **Architecture** (1 min): Cowrie on Fargate in 2 regions → S3 → ingest Lambda → DynamoDB → enrich Lambda (IPinfo + AbuseIPDB) → scheduled DBSCAN Lambda → HTTP API → React + Mapbox. Show `wiki/pages/System-Architecture.md`.
 3. **Live dashboard** (2 min): "the honeypots have just been deployed", so everything reads 0. Press **▶ Start attack
-   simulation** and let attacks land. After about 6–8 attacks (under a minute) the ML flags its first botnet, and a few
-   minutes in there are 3–6. Click a pop-up to open
+   simulation** and let attacks land (one every 13–17 s). The ML flags its first botnet after about 6–8 attacks.
+   Switch to **🗄 Database · AI/ML** to show every stored attack being classified and clustered as it arrives:
+   open one row and walk through the verdict, its MITRE techniques and the "why" features. Click a pop-up to open
    the attack's details and walk through its session timeline and stored record. Then click a botnet (e.g. *Malware
    dropper*): its IPs span several countries but run the same `wget … && ./x.sh` payload. That's the ML insight.
    Press **■ Stop** when done.

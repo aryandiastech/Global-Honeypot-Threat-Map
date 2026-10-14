@@ -24,6 +24,11 @@ from collections import Counter
 from dataclasses import dataclass, field
 from typing import Any, Iterable
 
+try:  # optional; imported once at module load (a cold scikit-learn import can take seconds)
+    from sklearn.cluster import DBSCAN as _SKLEARN_DBSCAN
+except ImportError:
+    _SKLEARN_DBSCAN = None
+
 NOISE = -1
 
 # Distance = weighted sum of components, each in [0, 1].
@@ -167,13 +172,10 @@ def dbscan(dist: list[list[float]], *, eps: float, min_samples: int) -> tuple[li
     """Returns (labels, engine). Uses scikit-learn when available."""
     if not dist:
         return [], "none"
-    try:
-        from sklearn.cluster import DBSCAN  # noqa: PLC0415
-
-        labels = DBSCAN(eps=eps, min_samples=min_samples, metric="precomputed").fit_predict(dist)
+    if _SKLEARN_DBSCAN is not None:
+        labels = _SKLEARN_DBSCAN(eps=eps, min_samples=min_samples, metric="precomputed").fit_predict(dist)
         return [int(x) for x in labels], "scikit-learn"
-    except ImportError:
-        return _dbscan_pure(dist, eps, min_samples), "pure-python"
+    return _dbscan_pure(dist, eps, min_samples), "pure-python"
 
 
 def _relabel_by_size(labels: list[int], weights: list[int]) -> list[int]:

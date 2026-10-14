@@ -1,4 +1,23 @@
-# ML — botnet clustering (offline CLI)
+# ML
+
+Two complementary models:
+
+| Module | Unit | Question | Method |
+|--------|------|----------|--------|
+| `attack_analysis.py` | attack session | *What kind of attack was it?* | Naive Bayes classifier → 7 types + MITRE ATT&CK; k-means (silhouette-picked k) + PCA |
+| `../pipeline/cluster_lambda/botnet_clustering.py` (CLI: `cluster_events.py`) | attacker IP | *Who is coordinated?* | DBSCAN on shared password lists / commands / SSH client |
+
+## Attack-type analysis
+
+```powershell
+curl "http://localhost:8000/attacks" -o ml/attacks.json
+python ml/attack_analysis.py --input ml/attacks.json --output ml/analysis.json
+```
+
+The model card (classifier accuracy, k, silhouette, cluster/type agreement) prints to stderr. The demo backend runs
+the same code on `POST /analysis/scan`.
+
+# Botnet clustering (offline CLI)
 
 `cluster_events.py` runs the same clustering as the scheduled Lambda and the local demo
 (`pipeline/cluster_lambda/botnet_clustering.py`) on an exported file:
